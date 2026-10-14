@@ -123,7 +123,7 @@ pip3 install matplotlib numpy
 ### 2. Get the code
 
 ```bash
-git clone https://github.com/pmgassin/PySHS_GUI.git
+git clone https://github.com/pmgassin/SHS_simulation.git
 cd PySHS_GUI
 ```
 
