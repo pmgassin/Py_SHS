@@ -232,6 +232,10 @@ uuu=betalabijk(phi,theta,psi,0,1,1,beta);
 
 int main(int argc, char *argv[])
 {
+/* Sortie ligne par ligne (pour suivi en direct depuis la GUI) */
+setvbuf(stdout, NULL, _IOLBF, 0);
+setvbuf(stderr, NULL, _IONBF, 0);
+
 FILE* fichier_beta=NULL;
 FILE* fichier_out=NULL;
 FILE* fichier_grace1=NULL;

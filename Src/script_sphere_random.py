@@ -37,33 +37,30 @@ def fibonacci_sphere(samples=1,randomize=True):
     return points
 uu=fibonacci_sphere(nombre)
 
-with open(uuv, "w") as f:
-    f.write("")
-
+lines = []
 for i in range(nombre):
     x[i]=a*uu[i][0]
     y[i]=a*uu[i][1]
     z[i]=a*uu[i][2]
     theta[i]=np.arccos(z[i]/a)
-#    theta[i]=(np.random.randn(1)*ind+np.arccos(z[i]/a))[0]
     psi[i]=0
     if y[i]>0:
         phi[i]=(np.arccos(x[i]/(a*np.sin(theta[i]))))
     else:
         phi[i]=-(np.arccos(x[i]/(a*np.sin(theta[i]))))
-    #theta[i]=(np.random.randn(1)*ind+np.arccos(z[i]/a))[0]
     theta[i]=theta[i]+(np.random.randn(1)*ind)[0]
-    phi[i]=phi[i]+(np.random.randn(1)*ind)[0]                 
-    
-    with open(uuv, "a") as f:
-        valeurs = "%12.6f %12.6f %12.6f %12.6f %12.6f %12.6f\n" % (phi[i],theta[i],psi[i],x[i],y[i],z[i]) 
-        f.write(valeurs)
+    phi[i]=phi[i]+(np.random.randn(1)*ind)[0]
+    lines.append("%12.6f %12.6f %12.6f %12.6f %12.6f %12.6f\n" % (phi[i],theta[i],psi[i],x[i],y[i],z[i]))
 
+with open(uuv, "w") as f:
+    f.writelines(lines)
+
+# Sauvegarde du graphique sous un nom distinct (évite d'écraser le .txt)
 fig = plt.figure()
-ax = fig.gca(projection='3d')
-#ax._axis3don = False
+ax = fig.add_subplot(111, projection='3d')
 ax.quiver(x,y,z,(a/3)*np.cos(phi)*np.sin(theta),(a/3)*np.sin(phi)*np.sin(theta),(a/3)*np.cos(theta),color='b')
-plt.savefig(uuv)
-plt.show()
+plot_name = uuv if uuv.lower().endswith(('.png', '.pdf', '.jpg')) else (uuv + ".png")
+plt.savefig(plot_name)
+# plt.show()  # désactivé pour usage non-interactif (GUI)
 
 

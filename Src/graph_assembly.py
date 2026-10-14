@@ -1,42 +1,63 @@
-import math, random
+#!/usr/bin/env python3
+import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
-import csv
 import sys
 
+if len(sys.argv) < 3:
+    print("Usage: python graph_assembly.py <orientation_file> <output_image.png>")
+    sys.exit(1)
 
-uuv=sys.argv[1]
+orient_file = sys.argv[1]
+output_image = sys.argv[2]
 
-nombre=int(input("number of dipoles?"))
-data=[0]*nombre
-value=[0]*nombre
-dx=np.zeros(nombre)
-dy=np.zeros(nombre)
-dz=np.zeros(nombre)
-x=np.zeros(nombre)
-y=np.zeros(nombre)
-z=np.zeros(nombre)
+x, y, z, phi, theta, psi = [], [], [], [], [], []
 
-for i in range(0,nombre):
-    with open('out_arrows_gnuplot','r') as f:
-        data[i]=f.readlines()[i]
-        value[i] = data[i].split()
-        x[i]=float(value[i][0])
-        y[i]=float(value[i][1])
-        z[i]=float(value[i][2])
-        dx[i]=float(value[i][3])
-        dy[i]=float(value[i][4])
-        dz[i]=float(value[i][5])
+with open(orient_file, 'r') as f:
+    for line in f:
+        parts = line.split()
+        if len(parts) >= 6:
+            try:
+                # Format du manuel : φ' θ' ψ' x' y' z'
+                # ou parfois x y z φ θ ψ → on détecte
+                vals = [float(p) for p in parts[:6]]
+                # Heuristique simple : si les 3 premiers sont entre -π et π → angles d'abord
+                if abs(vals[0]) <= 3.2 and abs(vals[1]) <= 3.2:
+                    phi.append(vals[0])
+                    theta.append(vals[1])
+                    psi.append(vals[2])
+                    x.append(vals[3])
+                    y.append(vals[4])
+                    z.append(vals[5])
+                else:
+                    x.append(vals[0])
+                    y.append(vals[1])
+                    z.append(vals[2])
+                    phi.append(vals[3])
+                    theta.append(vals[4])
+                    psi.append(vals[5])
+            except ValueError:
+                continue
 
-a_x = np.amax(x)
-a_y= np.amax(y)
-a_z= np.amax(z)
-a_list=[a_x,a_y,a_z]
-a=np.amax(a_list)
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-#ax._axis3don = False
-ax.quiver(x,y,z,(a/3)*dx,(a/3)*dy,(a/3)*dz,color='b')
-plt.savefig(uuv)
-plt.show()
+if not x:
+    print("Aucune donnée d'orientation trouvée")
+    sys.exit(1)
+
+x, y, z = np.array(x), np.array(y), np.array(z)
+phi, theta = np.array(phi), np.array(theta)
+
+bip = 5.0
+fig = plt.figure(figsize=(8, 7))
+ax = fig.add_subplot(111, projection='3d')
+ax.quiver(x, y, z,
+          bip * np.cos(phi) * np.sin(theta),
+          bip * np.sin(phi) * np.sin(theta),
+          bip * np.cos(theta),
+          color='crimson', arrow_length_ratio=0.3)
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_title('Assemblage des dipôles')
+plt.tight_layout()
+plt.savefig(output_image, dpi=150)
+print(f"Graphique assemblage sauvegardé : {output_image}")

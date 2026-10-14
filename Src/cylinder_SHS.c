@@ -312,6 +312,9 @@ uuu=R*kimesoijk(phi,theta,psi,1,0,1,kimeso)*sin(theta)*cexp(((-2*petitk+grandk*c
 
 int main(int argc, char *argv[])
 {
+setvbuf(stdout, NULL, _IOLBF, 0);
+setvbuf(stderr, NULL, _IONBF, 0);
+
 FILE* fichier_beta=NULL;
 FILE* fichier_out=NULL;
 FILE* fichier_grace1=NULL;
@@ -336,7 +339,7 @@ printf("********************************************************\n");
 
 int i,j,k,kkk,ii,iii,i2,j2,k2;
 int nom;
-double complex grandk,petitk;
+//double complex grandk,petitk;
 double pi=3.1415926535897;
 double pisur2;
 double beta[3][3][3];
@@ -355,8 +358,8 @@ char str3[20]="angle_scattering";
 double grandtheta,grandthetadegree,grandtheta_1,grandtheta_2,grandthetadegree_1,grandthetadegree_2,IH_0,IH_90,IV_0,IV_90;
 int pas2,pas3,mmm,mmmf,mmmfbis,point,ic;
 double beta_y_moy_0,beta_z_moy_0,beta_y_moy_90,beta_z_moy_90,beta_xxx_moy,beta_xyy_moy;
-double complex n;
-double realpartn,imagpartn;
+//double complex n;
+//double realpartn,imagpartn;
 double longueuronde=800;
 double R,length;
 pisur2=pi/2;
@@ -364,27 +367,73 @@ pas2=10;
 pas=10;
 
 
+    int use_nlwkb = 0;
+
+    // ---------- Choix du mode ----------
+    //printf("Do you want to use NLWKB approximation? (1 = yes, 0 = no [classic RGD]): ");
+    //scanf("%d", &use_nlwkb);
+    //printf("\n");
+	use_nlwkb=1;
+	
+    double complex n, n_p, n_m;
+    double realpart, imagpart;
+
+    printf("Enter the wavelength in nm: ");
+    scanf("%lf", &longueuronde);
+
+    if (use_nlwkb) {
+        printf("\n=== NLWKB mode activated ===\n");
+        printf("Enter REAL part of particle refractive index n_p: ");
+        scanf("%lf", &realpart);
+        printf("Enter IMAGINARY part of particle refractive index n_p: ");
+        scanf("%lf", &imagpart);
+        n_p = realpart + imagpart * I;
+
+        printf("Enter REAL part of medium refractive index n_m: ");
+        scanf("%lf", &realpart);
+        printf("Enter IMAGINARY part of medium refractive index n_m: ");
+        scanf("%lf", &imagpart);
+        n_m = realpart + imagpart * I;
+
+        printf("\nn_p (particle) = %.5f + i*%.5f\n", creal(n_p), cimag(n_p));
+        printf("n_m (medium)   = %.5f + i*%.5f\n", creal(n_m), cimag(n_m));
+    } else {
+        printf("\n=== Classic RGD mode (single index) ===\n");
+        printf("Enter REAL part of the refractive index n: ");
+        scanf("%lf", &realpart);
+        printf("Enter IMAGINARY part of the refractive index n: ");
+        scanf("%lf", &imagpart);
+        n = realpart + imagpart * I;
+        n_p = n;
+        n_m = n;
+        printf("\nn = %.5f + i*%.5f\n", creal(n), cimag(n));
+    }
+
+    printf("Enter the radius of the cylinder in nm: ");
+    scanf("%lf", &R);
+    printf("\n");
+    printf("Enter the length of the cylinder in nm? ");
+	scanf("%lf", &length);
+	printf("      ******************************     \n");
+    
+
+    // ---------- Calcul des vecteurs d'onde ----------
+    double complex petitk, grandk;
+
+    if (use_nlwkb) {
+        petitk = 2.0 * pi * n_p / longueuronde;   // k_ω inside particle
+        grandk = 4.0 * pi * n_m / longueuronde;   // k_2ω in medium
+        printf("NLWKB vectors:\n");
+    } else {
+        petitk = 2.0 * pi * n / longueuronde;
+        grandk = 4.0 * pi * n / longueuronde;
+        printf("Classic RGD vectors:\n");
+    }
+
+    printf("petitk (k_omega) = %.6f + i*%.6f\n", creal(petitk), cimag(petitk));
+    printf("grandk (k_2omega)= %.6f + i*%.6f\n\n", creal(grandk), cimag(grandk));
 
 
-printf("Enter the wavelength in nm? ");
-scanf("%lf", &longueuronde);
-printf("The wavelength is: %lf \n",longueuronde);
-printf("      ******************************     \n");
-printf("Enter the real part of the refractive index? ");
-scanf("%lf", &realpartn);
-printf("      ******************************     \n");
-printf("Enter the imaginary part of the refractive index? ");
-scanf("%lf", &imagpartn);
-printf("      ******************************     \n");
-n=realpartn+imagpartn*I;
-printf("The refractive index is: %lf + I*%lf \n",creal(n),cimag(n));
-printf("      ******************************     \n");
-printf("Enter the radius of the cylinder in nm? ");
-scanf("%lf", &R);
-printf("      ******************************     \n");
-printf("Enter the length of the cylinder in nm? ");
-scanf("%lf", &length);
-printf("      ******************************     \n");
 
 pas3=100;
 if( argc == 4 ) {
@@ -411,8 +460,8 @@ fichier_out = fopen(argv[3], "w");
 	printf("problem to open the output file to write results!\n");
 }
 printf("      ******************************     \n");
-grandk=4*pi*n/longueuronde;
-petitk=2*pi*n/longueuronde;
+//grandk=4*pi*n/longueuronde;
+//petitk=2*pi*n/longueuronde;
 
 fgets (chaine, 121, fichier_beta);
 fgets (chaine, 121, fichier_beta);
