@@ -69,7 +69,7 @@ sudo dnf install python3 python3-tkinter python3-matplotlib python3-numpy gcc
 ### 2. Get the code
 
 ```bash
-git clone https://github.com/pmgassin/PySHS_GUI.git
+git clone https://github.com/pmgassin/Py_SHS.git
 cd PySHS_GUI
 ```
 
@@ -123,7 +123,7 @@ pip3 install matplotlib numpy
 ### 2. Get the code
 
 ```bash
-git clone https://github.com/pmgassin/SHS_simulation.git
+git clone https://github.com/pmgassin/Py_SHS.git
 cd PySHS_GUI
 ```
 
