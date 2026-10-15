@@ -1,4 +1,4 @@
-SHS_simulation is a collection of different programs which can compute the Second Harmonic Intensity Scattered by a supramolecular structure. 
+Py_SHS is a collection of different programs which can compute the Second Harmonic Intensity Scattered by a supramolecular structure. 
 Don't forget to cite this work:
 J. Chem. Inf. Model. 2020, 60, 12, 5912–5917 J. Chem. Inf. Model. 2021, 61, 11, 5719
 
