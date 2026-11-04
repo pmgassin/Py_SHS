@@ -1,12 +1,20 @@
-import matplotlib.pyplot as plt
-import numpy as np
+# Dipoles on the lateral surface of a cylinder (axis z), for SHS.py.
+# Output lines: phi theta psi x y z ; dipole along the outward radial direction
+# (phi = azimuth, theta = pi/2, psi = 0 -- the frame used by cylinder_SHS.py) + Gaussian noise
+# sigma on phi and theta.  The cylinder has no end caps (as in cylinder_SHS.py).
 import sys
+
+import numpy as np
+try:
+    import matplotlib.pyplot as plt
+except ImportError:                       # the picture is optional
+    plt = None
 
 uu = sys.argv[1]
 
 a = float(input("cylinder radius in nm?"))
 l = float(input("length of the cylinder in nm?"))
-nombre1 = int(input("Number of dipoles per radius?"))
+nombre1 = int(input("Number of dipoles around the circumference?"))
 nombre2 = int(input("Number of dipoles on the length ?"))
 ind = float(input("indice de desordre, sigma distribution ?"))
 nombrefinal = nombre1 * nombre2
@@ -30,10 +38,7 @@ for i in range(nombre1):
         z[kk] = -(l / 2) + cc * j
         kk += 1
 
-xmax = np.amax(x) if nombrefinal else 0
-ymax = np.amax(y) if nombrefinal else 0
-zmax = np.amax(z) if nombrefinal else 0
-b = (xmax + ymax + zmax) / 10 if (xmax + ymax + zmax) != 0 else 1.0
+b = 0.4 * a if a > 0 else 1.0          # arrow length of the picture
 
 lines = []
 for j in range(nombrefinal):
@@ -43,8 +48,13 @@ with open(uu, "w") as f:
     f.writelines(lines)
 
 print("total number of dipoles on the cylinder:%d" % nombrefinal)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection="3d")
-ax.quiver(x, y, z, b * np.cos(phi) * np.sin(theta), b * np.sin(phi) * np.sin(theta), b * np.cos(theta))
-plot_name = uu if uu.lower().endswith((".png", ".pdf", ".jpg")) else (uu + ".png")
-plt.savefig(plot_name)
+try:
+    if plt is None:
+        raise RuntimeError('matplotlib not installed')
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    ax.quiver(x, y, z, b * np.cos(phi) * np.sin(theta), b * np.sin(phi) * np.sin(theta), b * np.cos(theta))
+    plot_name = uu if uu.lower().endswith((".png", ".pdf", ".jpg")) else (uu + ".png")
+    plt.savefig(plot_name)
+except Exception as exc:                 # the picture is optional
+    print("(no 3D picture: %s)" % exc)

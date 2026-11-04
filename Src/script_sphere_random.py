@@ -1,3 +1,7 @@
+# Dipoles on a sphere with orientational disorder, for SHS.py.
+# Output lines: phi theta psi x y z  (dipole along the outward normal + Gaussian noise of
+# standard deviation sigma on phi and theta).  Note: a noise sigma on phi is a real tilt of
+# sigma*sin(theta) only, so the angular spread is larger near the poles than at the equator.
 import math, random
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -42,12 +46,9 @@ for i in range(nombre):
     x[i]=a*uu[i][0]
     y[i]=a*uu[i][1]
     z[i]=a*uu[i][2]
-    theta[i]=np.arccos(z[i]/a)
+    theta[i]=np.arccos(np.clip(z[i]/a,-1.0,1.0))
     psi[i]=0
-    if y[i]>0:
-        phi[i]=(np.arccos(x[i]/(a*np.sin(theta[i]))))
-    else:
-        phi[i]=-(np.arccos(x[i]/(a*np.sin(theta[i]))))
+    phi[i]=np.arctan2(y[i],x[i])        # azimuth, robust at the poles (no 0/0, no arccos domain error)
     theta[i]=theta[i]+(np.random.randn(1)*ind)[0]
     phi[i]=phi[i]+(np.random.randn(1)*ind)[0]
     lines.append("%12.6f %12.6f %12.6f %12.6f %12.6f %12.6f\n" % (phi[i],theta[i],psi[i],x[i],y[i],z[i]))

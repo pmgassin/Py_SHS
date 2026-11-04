@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PySHS V3.2.x – Tkinter GUI
-Tabs: HRS | SHS | Sphere | Cylinder
+PySHS V4.0 – Tkinter GUI (100 % Python / NumPy)
+Tabs: HRS | SHS | Sphere | Cylinder | Ellipsoid | Cube
 """
 
 import tkinter as tk
@@ -21,8 +21,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import numpy as np
 
 # Package layout:
-#   <root>/Src/          sources + GUI + scripts
-#   <root>/bin/          compiled C executables (HRS, SHS, …)
+#   <root>/Src/          pure-Python modules + GUI + scripts
 #   <root>/Work/         input/output files, temp jobs, out_plot
 #   <root>/Documentation manuals
 # When frozen with PyInstaller (Windows .exe), base is the folder containing the exe.
@@ -44,22 +43,44 @@ else:
     else:
         BASE_DIR = _SCRIPT_DIR
         SRC_DIR = BASE_DIR / "Src"
-BIN_DIR = BASE_DIR / "bin"
-BIN_DIR.mkdir(exist_ok=True)
 WORK_DIR = BASE_DIR / "Work"
 WORK_DIR.mkdir(exist_ok=True)
 
-SRC_HRS = SRC_DIR / "HRS.c"
-SRC_SHS = SRC_DIR / "SHS.c"
-SRC_SPHERE = SRC_DIR / "sphere_SHS.c"
-SRC_CYLINDER = SRC_DIR / "cylinder_SHS.c"
-# Compiled binaries live in bin/
-EXE_HRS = BIN_DIR / ("HRS.exe" if sys.platform == "win32" else "HRS")
-EXE_SHS = BIN_DIR / ("SHS.exe" if sys.platform == "win32" else "SHS")
-EXE_SPHERE = BIN_DIR / ("sphere_SHS.exe" if sys.platform == "win32" else "sphere_SHS")
-EXE_CYLINDER = BIN_DIR / ("cylinder_SHS.exe" if sys.platform == "win32" else "cylinder_SHS")
+# Pure-Python modules (no C compilation)
+SRC_HRS = SRC_DIR / "HRS.py"
+SRC_SHS = SRC_DIR / "SHS.py"
+SRC_SPHERE = SRC_DIR / "sphere_SHS.py"
+SRC_MIE = SRC_DIR / "shs_mie.py"
+SRC_CYLINDER = SRC_DIR / "cylinder_SHS.py"
+SRC_ELLIPSOID = SRC_DIR / "ellipsoid_SHS.py"
+SRC_CUBE = SRC_DIR / "cube_SHS.py"
 
 # Known generation scripts: display name → (file, list of (label, key, default))
+WORK_KEEP_DAYS = 7      # run directories (Work/pyshs_*) older than this are removed
+
+
+def _cleanup_old_runs(max_age_days=WORK_KEEP_DAYS):
+    """Remove the temporary run directories created by the GUI (Work/pyshs_*) that are older
+    than `max_age_days`; they used to accumulate for ever.  Only directories created by the
+    GUI itself (prefix 'pyshs_') are touched."""
+    import time
+    limit = time.time() - max_age_days * 86400.0
+    try:
+        for d in WORK_DIR.iterdir():
+            if d.is_dir() and d.name.startswith("pyshs_"):
+                try:
+                    if d.stat().st_mtime < limit:
+                        shutil.rmtree(d, ignore_errors=True)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+UNITS_CHOICES = ("module default", "rad : r\u00b2|E|\u00b2 (with radiative prefactor)",
+                 "raw : coherent sum (no prefactor)")
+UNITS_ENV = {UNITS_CHOICES[0]: "", UNITS_CHOICES[1]: "rad", UNITS_CHOICES[2]: "raw"}
+
 GEN_SCRIPTS = {
     "Sphere (script_sphere_random.py)": (
         "script_sphere_random.py",
@@ -83,7 +104,7 @@ GEN_SCRIPTS = {
         [
             ("Radius (nm)", "radius", "20"),
             ("Length (nm)", "length", "80"),
-            ("Dipoles per radius", "n_radius", "12"),
+            ("Dipoles around circumference", "n_radius", "12"),
             ("Dipoles along length", "n_length", "10"),
             ("σ disorder (rad)", "sigma", "0.3"),
         ],
@@ -122,54 +143,21 @@ zzz 1.0
 """
 
 
-def find_compiler():
-    for c in (["gcc", "clang", "cl"] if sys.platform == "win32" else ["gcc", "clang"]):
-        try:
-            subprocess.run([c, "--version"], capture_output=True, check=True)
-            return c
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-    return None
-
-
-def compile_source(src: Path, exe: Path, log_callback=None) -> bool:
-    compiler = find_compiler()
-    if compiler is None:
-        if log_callback:
-            log_callback("ERROR: no C compiler found (gcc/clang).")
-        return False
+def check_python_module(src: Path, log_callback=None) -> bool:
+    """Verify that a pure-Python calculation module is present."""
     if not src.exists():
         if log_callback:
-            log_callback(f"ERROR: source not found: {src}")
+            log_callback(f"ERROR: Python module not found: {src}")
         return False
-    if exe.exists() and exe.stat().st_mtime > src.stat().st_mtime:
-        if log_callback:
-            log_callback(f"Executable already up to date: {exe.name}")
-        return True
-    cmd = [compiler, str(src), "-o", str(exe), "-lm"]
     if log_callback:
-        log_callback(f"Compiling: {' '.join(cmd)}")
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if res.returncode != 0:
-            if log_callback:
-                log_callback("Compilation failed:\n" + res.stderr)
-            return False
-        if sys.platform != "win32":
-            os.chmod(exe, 0o755)
-        if log_callback:
-            log_callback(f"Compilation successful → {exe.name}")
-        return True
-    except Exception as e:
-        if log_callback:
-            log_callback(f"Compilation exception: {e}")
-        return False
+        log_callback(f"OK: {src.name}")
+    return True
 
 
 class PySHSApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("PySHS V3.2 – Graphical Interface")
+        self.title("PySHS V4.0 – Graphical Interface (100 % Python)")
         self.geometry("1280x900")
         self.minsize(1000, 750)
 
@@ -180,6 +168,9 @@ class PySHSApp(tk.Tk):
 
         # HRS
         self.hrs_keyword = tk.StringVar(value="polarplot_single")
+        self.hrs_wavelength = tk.StringVar(value="800")
+        self.hrs_n_real = tk.StringVar(value="1.33")
+        self.hrs_n_imag = tk.StringVar(value="0.0")
         self.hrs_theta = tk.StringVar(value="90")
         self.hrs_theta_start = tk.StringVar(value="0")
         self.hrs_theta_end = tk.StringVar(value="180")
@@ -204,6 +195,11 @@ class PySHSApp(tk.Tk):
         self.sph_nm_real = tk.StringVar(value="1.33")
         self.sph_nm_imag = tk.StringVar(value="0.0")
         self.sph_radius = tk.StringVar(value="50")
+        # Intensity units / scale: one setting shared by ALL calculation modules
+        # (the "Intensity scale factor" row of the Sphere panel edits the same variable)
+        self.out_units = tk.StringVar(value=UNITS_CHOICES[0])
+        self.out_i_scale = tk.StringVar(value="1")
+        self.sph_i_scale = self.out_i_scale
         self.sph_theta = tk.StringVar(value="90")
         self.sph_theta_start = tk.StringVar(value="0")
         self.sph_theta_end = tk.StringVar(value="180")
@@ -223,6 +219,35 @@ class PySHSApp(tk.Tk):
         self.cyl_theta_end = tk.StringVar(value="180")
         self.cyl_n_points = tk.StringVar(value="20")
 
+        # Ellipsoid of revolution (NLWKB)
+        self.ell_keyword = tk.StringVar(value="polarplot_single")
+        self.ell_wavelength = tk.StringVar(value="800")
+        self.ell_np_real = tk.StringVar(value="1.5")
+        self.ell_np_imag = tk.StringVar(value="0.0")
+        self.ell_nm_real = tk.StringVar(value="1.33")
+        self.ell_nm_imag = tk.StringVar(value="0.0")
+        self.ell_radius = tk.StringVar(value="20")   # equatorial radius a
+        self.ell_length = tk.StringVar(value="80")   # length along axis = 2c
+        self.ell_theta = tk.StringVar(value="90")
+        self.ell_theta_start = tk.StringVar(value="0")
+        self.ell_theta_end = tk.StringVar(value="180")
+        self.ell_n_points = tk.StringVar(value="20")
+
+        # Cube / rectangular box (NLWKB)
+        self.cube_keyword = tk.StringVar(value="polarplot_single")
+        self.cube_wavelength = tk.StringVar(value="800")
+        self.cube_np_real = tk.StringVar(value="1.5")
+        self.cube_np_imag = tk.StringVar(value="0.0")
+        self.cube_nm_real = tk.StringVar(value="1.33")
+        self.cube_nm_imag = tk.StringVar(value="0.0")
+        self.cube_a = tk.StringVar(value="20")   # edge along x
+        self.cube_b = tk.StringVar(value="20")   # edge along y
+        self.cube_c = tk.StringVar(value="20")   # edge along z
+        self.cube_theta = tk.StringVar(value="90")
+        self.cube_theta_start = tk.StringVar(value="0")
+        self.cube_theta_end = tk.StringVar(value="180")
+        self.cube_n_points = tk.StringVar(value="20")
+
         # Generation
         self.gen_script_choice = tk.StringVar(value=list(GEN_SCRIPTS.keys())[0])
         self.gen_vars = {}  # key → StringVar
@@ -234,6 +259,8 @@ class PySHSApp(tk.Tk):
         self._update_shs_params()
         self._update_sph_params()
         self._update_cyl_params()
+        self._update_ell_params()
+        self._update_cube_params()
         self._on_gen_script_changed()
         self.after(200, self._initial_compile)
 
@@ -242,15 +269,26 @@ class PySHSApp(tk.Tk):
         header = tk.Frame(self, bg="#1e40af", height=52)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
-        tk.Label(header, text="PySHS V3.2 – Second Harmonic Scattering",
+        tk.Label(header, text="PySHS V4.0 – Second Harmonic Scattering (pure Python)",
                  font=("Segoe UI", 15, "bold"), fg="white", bg="#1e40af").pack(side=tk.LEFT, padx=16, pady=10)
+
+        lf_units = ttk.LabelFrame(self, text="Intensity units (all modules)", padding=(8, 2))
+        lf_units.pack(fill=tk.X, padx=6, pady=(6, 0))
+        ttk.Label(lf_units, text="Units:").pack(side=tk.LEFT)
+        ttk.Combobox(lf_units, textvariable=self.out_units, values=UNITS_CHOICES,
+                     state="readonly", width=34).pack(side=tk.LEFT, padx=(4, 12))
+        ttk.Label(lf_units, text="Intensity scale factor:").pack(side=tk.LEFT)
+        ttk.Entry(lf_units, textvariable=self.out_i_scale, width=10).pack(side=tk.LEFT, padx=(4, 12))
+        ttk.Label(lf_units, foreground="#64748b",
+                  text="rad = r\u00b2|E|\u00b2 with (|K|\u00b2/4\u03c0)\u00b2 ; raw = coherent sum, no prefactor. "
+                       "Module default: HRS/SHS raw, others rad.").pack(side=tk.LEFT)
 
         paned = tk.PanedWindow(self, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=5)
         paned.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
         top = ttk.Frame(paned)
         # Larger top pane (HRS/SHS tabs) so all SHS controls are visible
-        paned.add(top, height=520)
+        paned.add(top, height=480)
 
         self.main_nb = ttk.Notebook(top)
         self.main_nb.pack(fill=tk.BOTH, expand=True)
@@ -258,14 +296,20 @@ class PySHSApp(tk.Tk):
         self.tab_shs = ttk.Frame(self.main_nb, padding=6)
         self.tab_sphere = ttk.Frame(self.main_nb, padding=6)
         self.tab_cylinder = ttk.Frame(self.main_nb, padding=6)
+        self.tab_ellipsoid = ttk.Frame(self.main_nb, padding=6)
+        self.tab_cube = ttk.Frame(self.main_nb, padding=6)
         self.main_nb.add(self.tab_hrs, text="  HRS Calculation  ")
         self.main_nb.add(self.tab_shs, text="  SHS Calculation  ")
         self.main_nb.add(self.tab_sphere, text="  Sphere Object  ")
         self.main_nb.add(self.tab_cylinder, text="  Cylinder Object  ")
+        self.main_nb.add(self.tab_ellipsoid, text="  Ellipsoid Object  ")
+        self.main_nb.add(self.tab_cube, text="  Cube Object  ")
         self._build_hrs_tab(self.tab_hrs)
         self._build_shs_tab(self.tab_shs)
         self._build_sphere_tab(self.tab_sphere)
         self._build_cylinder_tab(self.tab_cylinder)
+        self._build_ellipsoid_tab(self.tab_ellipsoid)
+        self._build_cube_tab(self.tab_cube)
 
         bottom = ttk.Frame(paned)
         paned.add(bottom)
@@ -290,6 +334,9 @@ class PySHSApp(tk.Tk):
         self.hrs_params_frame.pack(fill=tk.X, pady=(0, 6))
         self.hrs_param_widgets = {}
         for i, (key, label, var) in enumerate([
+            ("wavelength", "Wavelength (nm)", self.hrs_wavelength),
+            ("n_real", "n – real part", self.hrs_n_real),
+            ("n_imag", "n – imaginary part", self.hrs_n_imag),
             ("theta", "Scattering angle Θ (°)", self.hrs_theta),
             ("theta_start", "Start angle (°)", self.hrs_theta_start),
             ("theta_end", "End angle (°)", self.hrs_theta_end),
@@ -321,15 +368,24 @@ class PySHSApp(tk.Tk):
 
     def _update_hrs_params(self):
         kw = self.hrs_keyword.get()
-        show = {"theta"} if kw == "polarplot_single" else \
-               {"theta_start", "theta_end", "n_points"} if kw == "polarplot_integrate" else {"n_points"}
+        show = {
+            "wavelength": True,
+            "n_real": True,
+            "n_imag": True,
+            "theta": kw == "polarplot_single",
+            "theta_start": kw == "polarplot_integrate",
+            "theta_end": kw == "polarplot_integrate",
+            "n_points": kw in ("polarplot_integrate", "angle_scattering"),
+        }
         for key, (lbl, ent) in self.hrs_param_widgets.items():
-            (lbl.grid() if key in show else lbl.grid_remove())
-            (ent.grid() if key in show else ent.grid_remove())
+            if show.get(key, False):
+                lbl.grid()
+                ent.grid()
+            else:
+                lbl.grid_remove()
+                ent.grid_remove()
 
-    # ------------------------------------------------------------------
-    # SHS – fixed layout: buttons always visible
-    # ------------------------------------------------------------------
+
     def _build_shs_tab(self, parent):
         # 3 zones: parameters (scrollable) | files | buttons pinned at bottom of left column
         outer = ttk.Frame(parent)
@@ -530,22 +586,78 @@ class PySHSApp(tk.Tk):
         btn = ttk.Frame(left)
         btn.pack(fill=tk.X, pady=8)
         self.btn_run_sphere = ttk.Button(
-            btn, text="▶  Run Sphere calculation",
+            btn, text="▶  Run sphere SHS calculation (NLRGD theory)",
             command=lambda: self._run_calculation("Sphere")
         )
         self.btn_run_sphere.pack(fill=tk.X, pady=2)
+        self.btn_run_sphere_mie = ttk.Button(
+            btn, text="▶  Run sphere SHS calculation (Mie theory)",
+            command=lambda: self._run_calculation("SphereMie")
+        )
+        self.btn_run_sphere_mie.pack(fill=tk.X, pady=2)
 
-        lf_b = ttk.LabelFrame(right, text="Surface χ⁽²⁾ / hyperpolarizability tensor", padding=4)
+        lf_b = ttk.LabelFrame(right, text="Surface chi(2) / hyperpolarizability tensor", padding=4)
         lf_b.pack(fill=tk.BOTH, expand=True)
-        self.txt_beta_sph = scrolledtext.ScrolledText(lf_b, height=16, font=("Consolas", 9))
+
+        ttk.Label(
+            lf_b,
+            text="Choose a sub-tab below: full 27-component tensor, or Mie isotropic (rrr, rtt, trt).",
+            foreground="#334155",
+        ).pack(anchor=tk.W, pady=(0, 4))
+
+        self.sph_beta_nb = ttk.Notebook(lf_b)
+        self.sph_beta_nb.pack(fill=tk.BOTH, expand=True)
+
+        # ----- Tab 1: full tensor -----
+        tab_full = ttk.Frame(self.sph_beta_nb, padding=4)
+        self.sph_beta_nb.add(tab_full, text="Full tensor")
+        self.txt_beta_sph = scrolledtext.ScrolledText(tab_full, height=14, font=("Consolas", 9))
         self.txt_beta_sph.pack(fill=tk.BOTH, expand=True)
         self.txt_beta_sph.insert(tk.END, EXAMPLE_BETA)
-        bf = ttk.Frame(lf_b)
+        bf = ttk.Frame(tab_full)
         bf.pack(fill=tk.X, pady=4)
         ttk.Button(bf, text="Load example",
                    command=lambda: self._load_example_beta(self.txt_beta_sph)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(bf, text="Load file…",
+        ttk.Button(bf, text="Load file...",
                    command=lambda: self._load_file_into(self.txt_beta_sph)).pack(side=tk.LEFT, padx=2)
+
+        # ----- Tab 2: Mie isotropic -----
+        tab_mie = ttk.Frame(self.sph_beta_nb, padding=8)
+        self.sph_beta_nb.add(tab_mie, text="Mie isotropic (rrr, rtt, trt)")
+        ttk.Label(
+            tab_mie,
+            text="Isotropic achiral surface. Editing these fields updates the Full tensor tab:",
+            wraplength=380, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab_mie,
+            text="zzz = chi_rrr ;  zxx = zyy = chi_rtt ;  xzx = xxz = yzy = yyz = chi_trt",
+            font=("Consolas", 8), foreground="#475569",
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        self.sph_chi_rrr = tk.StringVar(value="1.0")
+        self.sph_chi_rtt = tk.StringVar(value="0.0")
+        self.sph_chi_trt = tk.StringVar(value="0.0")
+        form = ttk.Frame(tab_mie)
+        form.pack(fill=tk.X)
+        for i, (lab, var, hint) in enumerate((
+            ("chi_rrr  (perp-perp-perp)", self.sph_chi_rrr, "beta_zzz"),
+            ("chi_rtt  (perp-par-par)", self.sph_chi_rtt, "beta_zxx = beta_zyy = chi_rtt"),
+            ("chi_trt  (par-perp-par)", self.sph_chi_trt, "beta_xzx = xxz = yzy = yyz = chi_trt"),
+        )):
+            ttk.Label(form, text=lab).grid(row=i, column=0, sticky=tk.W, pady=4)
+            ttk.Entry(form, textvariable=var, width=14).grid(row=i, column=1, sticky=tk.W, padx=8)
+            ttk.Label(form, text=hint, foreground="#64748b").grid(row=i, column=2, sticky=tk.W)
+
+        bf2 = ttk.Frame(tab_mie)
+        bf2.pack(fill=tk.X, pady=(14, 4))
+        ttk.Button(bf2, text="Apply -> Full tensor",
+                   command=self._apply_mie_chi_to_beta).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bf2, text="Read <- Full tensor",
+                   command=self._read_mie_chi_from_beta).pack(side=tk.LEFT, padx=2)
+
+        for v in (self.sph_chi_rrr, self.sph_chi_rtt, self.sph_chi_trt):
+            v.trace_add("write", lambda *_: self._apply_mie_chi_to_beta())
 
     def _update_sph_params(self):
         for w in self.sph_params_frame.winfo_children():
@@ -557,6 +669,7 @@ class PySHSApp(tk.Tk):
             ("n_m (medium) – real part", self.sph_nm_real),
             ("n_m (medium) – imaginary part", self.sph_nm_imag),
             ("Radius (nm)", self.sph_radius),
+            ("Intensity scale factor", self.sph_i_scale),
         ]
         kw = self.sph_keyword.get()
         if kw == "polarplot_single":
@@ -644,6 +757,149 @@ class PySHSApp(tk.Tk):
     # ------------------------------------------------------------------
     # Results + plots (intensity + assembly)
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Ellipsoid of revolution (colloidal continuum model)
+    # ------------------------------------------------------------------
+    def _build_ellipsoid_tab(self, parent):
+        left = ttk.Frame(parent)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+        right = ttk.Frame(parent)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        lf_kw = ttk.LabelFrame(left, text="Calculation type", padding=6)
+        lf_kw.pack(fill=tk.X, pady=4)
+        ttk.Combobox(
+            lf_kw, textvariable=self.ell_keyword,
+            values=["polarplot_single", "polarplot_integrate", "angle_scattering"],
+            state="readonly", width=22
+        ).pack(fill=tk.X)
+        self.ell_keyword.trace_add("write", lambda *_: self._update_ell_params())
+
+        self.ell_params_frame = ttk.LabelFrame(left, text="Parameters", padding=6)
+        self.ell_params_frame.pack(fill=tk.X, pady=4)
+
+        btn = ttk.Frame(left)
+        btn.pack(fill=tk.X, pady=8)
+        self.btn_run_ellipsoid = ttk.Button(
+            btn, text="▶  Run Ellipsoid calculation",
+            command=lambda: self._run_calculation("Ellipsoid")
+        )
+        self.btn_run_ellipsoid.pack(fill=tk.X, pady=2)
+
+        lf_b = ttk.LabelFrame(right, text="Surface chi(2) / hyperpolarizability tensor", padding=4)
+        lf_b.pack(fill=tk.BOTH, expand=True)
+        self.txt_beta_ell = scrolledtext.ScrolledText(lf_b, height=16, font=("Consolas", 9))
+        self.txt_beta_ell.pack(fill=tk.BOTH, expand=True)
+        self.txt_beta_ell.insert(tk.END, EXAMPLE_BETA)
+        bf = ttk.Frame(lf_b)
+        bf.pack(fill=tk.X, pady=4)
+        ttk.Button(bf, text="Load example",
+                   command=lambda: self._load_example_beta(self.txt_beta_ell)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bf, text="Load file...",
+                   command=lambda: self._load_file_into(self.txt_beta_ell)).pack(side=tk.LEFT, padx=2)
+
+        self._update_ell_params()
+
+    def _update_ell_params(self):
+        for w in self.ell_params_frame.winfo_children():
+            w.destroy()
+        rows = [
+            ("Wavelength (nm)", self.ell_wavelength),
+            ("n_p (particle) – real part", self.ell_np_real),
+            ("n_p (particle) – imaginary part", self.ell_np_imag),
+            ("n_m (medium) – real part", self.ell_nm_real),
+            ("n_m (medium) – imaginary part", self.ell_nm_imag),
+            ("Equatorial radius a (nm)", self.ell_radius),
+            ("Length along axis 2c (nm)", self.ell_length),
+        ]
+        kw = self.ell_keyword.get()
+        if kw == "polarplot_single":
+            rows.append(("Scattering angle Theta (deg)", self.ell_theta))
+        elif kw == "polarplot_integrate":
+            rows += [
+                ("Theta start (deg)", self.ell_theta_start),
+                ("Theta end (deg)", self.ell_theta_end),
+                ("Number of points", self.ell_n_points),
+            ]
+        else:
+            rows.append(("Number of angle points", self.ell_n_points))
+        for i, (lab, var) in enumerate(rows):
+            ttk.Label(self.ell_params_frame, text=lab).grid(row=i, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.ell_params_frame, textvariable=var, width=12).grid(row=i, column=1, sticky=tk.W, padx=4)
+
+
+    # ------------------------------------------------------------------
+    # Cube / rectangular box (colloidal continuum model)
+    # ------------------------------------------------------------------
+    def _build_cube_tab(self, parent):
+        left = ttk.Frame(parent)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+        right = ttk.Frame(parent)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        lf_kw = ttk.LabelFrame(left, text="Calculation type", padding=6)
+        lf_kw.pack(fill=tk.X, pady=4)
+        ttk.Combobox(
+            lf_kw, textvariable=self.cube_keyword,
+            values=["polarplot_single", "polarplot_integrate", "angle_scattering"],
+            state="readonly", width=22
+        ).pack(fill=tk.X)
+        self.cube_keyword.trace_add("write", lambda *_: self._update_cube_params())
+
+        self.cube_params_frame = ttk.LabelFrame(left, text="Parameters", padding=6)
+        self.cube_params_frame.pack(fill=tk.X, pady=4)
+
+        btn = ttk.Frame(left)
+        btn.pack(fill=tk.X, pady=8)
+        self.btn_run_cube = ttk.Button(
+            btn, text="▶  Run Cube calculation",
+            command=lambda: self._run_calculation("Cube")
+        )
+        self.btn_run_cube.pack(fill=tk.X, pady=2)
+
+        lf_b = ttk.LabelFrame(right, text="Surface chi(2) / hyperpolarizability tensor", padding=4)
+        lf_b.pack(fill=tk.BOTH, expand=True)
+        self.txt_beta_cube = scrolledtext.ScrolledText(lf_b, height=16, font=("Consolas", 9))
+        self.txt_beta_cube.pack(fill=tk.BOTH, expand=True)
+        self.txt_beta_cube.insert(tk.END, EXAMPLE_BETA)
+        bf = ttk.Frame(lf_b)
+        bf.pack(fill=tk.X, pady=4)
+        ttk.Button(bf, text="Load example",
+                   command=lambda: self._load_example_beta(self.txt_beta_cube)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bf, text="Load file...",
+                   command=lambda: self._load_file_into(self.txt_beta_cube)).pack(side=tk.LEFT, padx=2)
+
+        self._update_cube_params()
+
+    def _update_cube_params(self):
+        for w in self.cube_params_frame.winfo_children():
+            w.destroy()
+        rows = [
+            ("Wavelength (nm)", self.cube_wavelength),
+            ("n_p (particle) – real part", self.cube_np_real),
+            ("n_p (particle) – imaginary part", self.cube_np_imag),
+            ("n_m (medium) – real part", self.cube_nm_real),
+            ("n_m (medium) – imaginary part", self.cube_nm_imag),
+            ("Edge a along x (nm)", self.cube_a),
+            ("Edge b along y (nm)", self.cube_b),
+            ("Edge c along z (nm)", self.cube_c),
+        ]
+        kw = self.cube_keyword.get()
+        if kw == "polarplot_single":
+            rows.append(("Scattering angle Theta (deg)", self.cube_theta))
+        elif kw == "polarplot_integrate":
+            rows += [
+                ("Theta start (deg)", self.cube_theta_start),
+                ("Theta end (deg)", self.cube_theta_end),
+                ("Number of points", self.cube_n_points),
+            ]
+        else:
+            rows.append(("Number of angle points", self.cube_n_points))
+        for i, (lab, var) in enumerate(rows):
+            ttk.Label(self.cube_params_frame, text=lab).grid(row=i, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.cube_params_frame, textvariable=var, width=12).grid(row=i, column=1, sticky=tk.W, padx=4)
+
     def _build_results(self, parent):
         paned = tk.PanedWindow(parent, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         paned.pack(fill=tk.BOTH, expand=True)
@@ -682,7 +938,7 @@ class PySHSApp(tk.Tk):
         self.tab_plot_intensity = ttk.Frame(self.plot_nb)
         self.tab_plot_assembly = ttk.Frame(self.plot_nb)
         self.plot_nb.add(self.tab_plot_intensity, text="  SHS Intensity  ")
-        self.plot_nb.add(self.tab_plot_assembly, text="  Dipole assembly  ")
+        self.plot_nb.add(self.tab_plot_assembly, text="  Assembly / Geometry  ")
 
         self.plot_intensity_container = ttk.Frame(self.tab_plot_intensity)
         self.plot_intensity_container.pack(fill=tk.BOTH, expand=True)
@@ -705,7 +961,73 @@ class PySHSApp(tk.Tk):
         except tk.TclError:
             pass
 
+    def _parse_beta_text(self, content: str) -> dict:
+        """Parse 'ijk value' lines into a dict of lowercase labels."""
+        beta = {a + b + c: 0.0 for a in "xyz" for b in "xyz" for c in "xyz"}
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    beta[parts[0].lower()] = float(parts[1])
+                except ValueError:
+                    continue
+        return beta
+
+    def _format_beta_text(self, beta: dict) -> str:
+        lines = ["# Surface χ⁽²⁾ / hyperpolarizability tensor (a.u.)"]
+        for a in "xyz":
+            for b in "xyz":
+                for c in "xyz":
+                    key = a + b + c
+                    lines.append(f"{key} {beta.get(key, 0.0)}")
+        return "\n".join(lines) + "\n"
+
+    def _apply_mie_chi_to_beta(self):
+        """
+        Map isotropic Mie surface components onto the full 27-tensor:
+          β_zzz = χ_rrr
+          β_zxx = β_zyy = χ_rtt
+          β_xzx = β_xxz = β_yzy = β_yyz = χ_trt
+        Other components are zeroed (isotropic achiral surface).
+        """
+        if not hasattr(self, "txt_beta_sph"):
+            return
+        try:
+            chi_rrr = float(self.sph_chi_rrr.get())
+            chi_rtt = float(self.sph_chi_rtt.get())
+            chi_trt = float(self.sph_chi_trt.get())
+        except ValueError:
+            return
+        beta = {a + b + c: 0.0 for a in "xyz" for b in "xyz" for c in "xyz"}
+        beta["zzz"] = chi_rrr
+        beta["zxx"] = chi_rtt
+        beta["zyy"] = chi_rtt
+        for key in ("xzx", "xxz", "yzy", "yyz"):
+            beta[key] = chi_trt
+        text_beta = self._format_beta_text(beta)
+        self.txt_beta_sph.delete(1.0, tk.END)
+        self.txt_beta_sph.insert(tk.END, text_beta)
+
+    def _read_mie_chi_from_beta(self):
+        """Extract χ_rrr, χ_rtt, χ_trt from the full tensor editor."""
+        if not hasattr(self, "txt_beta_sph"):
+            return
+        beta = self._parse_beta_text(self.txt_beta_sph.get(1.0, tk.END))
+        chi_rrr = beta.get("zzz", 0.0)
+        # Independent isotropic components (not sums): zxx = zyy = chi_rtt
+        zxx, zyy = beta.get("zxx", 0.0), beta.get("zyy", 0.0)
+        chi_rtt = 0.5 * (zxx + zyy) if (zxx or zyy) else 0.0
+        comps = [beta.get(k, 0.0) for k in ("xzx", "xxz", "yzy", "yyz")]
+        chi_trt = sum(comps) / 4.0 if any(comps) else 0.0
+        self.sph_chi_rrr.set(str(chi_rrr))
+        self.sph_chi_rtt.set(str(chi_rtt))
+        self.sph_chi_trt.set(str(chi_trt))
+
     def _load_example_beta(self, w):
+
         w.delete(1.0, tk.END)
         w.insert(tk.END, EXAMPLE_BETA)
 
@@ -917,20 +1239,24 @@ class PySHSApp(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     # ------------------------------------------------------------------
-    # Compilation
+    # Module check (no compilation)
     # ------------------------------------------------------------------
     def _initial_compile(self):
-        self._log("Checking / compiling C sources…")
-        threading.Thread(target=self._compile_all, daemon=True).start()
+        self._log("Checking pure-Python modules…")
+        threading.Thread(target=self._check_all_modules, daemon=True).start()
 
-    def _compile_all(self):
-        ok1 = compile_source(SRC_HRS, EXE_HRS, self._log)
-        ok2 = compile_source(SRC_SHS, EXE_SHS, self._log)
-        ok3 = compile_source(SRC_SPHERE, EXE_SPHERE, self._log)
-        ok4 = compile_source(SRC_CYLINDER, EXE_CYLINDER, self._log)
+    def _check_all_modules(self):
+        ok1 = check_python_module(SRC_HRS, self._log)
+        ok2 = check_python_module(SRC_SHS, self._log)
+        ok3 = check_python_module(SRC_SPHERE, self._log)
+        ok4 = check_python_module(SRC_CYLINDER, self._log)
+        ok5 = check_python_module(SRC_ELLIPSOID, self._log)
+        ok6 = check_python_module(SRC_CUBE, self._log)
+        ok7 = check_python_module(SRC_MIE, self._log)
         self._log(
-            "All executables are ready.\n"
-            if (ok1 and ok2 and ok3 and ok4) else "Some compilations failed.\n"
+            "All Python modules are ready (no compilation needed).\n"
+            if (ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7)
+            else "Some Python modules are missing.\n"
         )
 
     # ------------------------------------------------------------------
@@ -944,11 +1270,16 @@ class PySHSApp(tk.Tk):
         orient_content = None
 
         if module == "HRS":
-            exe, src = EXE_HRS, SRC_HRS
+            # HRS: wavelength, n_real, n_imag, then angle params
+            src = SRC_HRS
             kw = self.hrs_keyword.get()
             beta_content = self.txt_beta_hrs.get(1.0, tk.END).strip()
             try:
-                answers = []
+                answers = [
+                    str(float(self.hrs_wavelength.get())),
+                    str(float(self.hrs_n_real.get())),
+                    str(float(self.hrs_n_imag.get())),
+                ]
                 if kw == "polarplot_single":
                     answers.append(str(float(self.hrs_theta.get())))
                 elif kw == "polarplot_integrate":
@@ -962,7 +1293,7 @@ class PySHSApp(tk.Tk):
                 return
 
         elif module == "SHS":
-            exe, src = EXE_SHS, SRC_SHS
+            src = SRC_SHS
             kw = self.shs_keyword.get()
             beta_content = self.txt_beta_shs.get(1.0, tk.END).strip()
             orient_content = self.txt_orient.get(1.0, tk.END).strip()
@@ -1006,7 +1337,7 @@ class PySHSApp(tk.Tk):
 
         elif module == "Sphere":
             # NLWKB sphere: use_nlwkb=1, wavelength, n_p, n_m, radius + angles
-            exe, src = EXE_SPHERE, SRC_SPHERE
+            src = SRC_SPHERE
             kw = self.sph_keyword.get()
             beta_content = self.txt_beta_sph.get(1.0, tk.END).strip()
             try:
@@ -1031,9 +1362,36 @@ class PySHSApp(tk.Tk):
                 messagebox.showerror("Error", f"Invalid value: {e}")
                 return
 
+        elif module == "SphereMie":
+            # Nonlinear Mie theory (Python, Src/shs_mie.py)
+            # stdin answers: wavelength, n_p, n_m, radius + angles (no use_nlwkb flag)
+            src = SRC_MIE
+            kw = self.sph_keyword.get()
+            beta_content = self.txt_beta_sph.get(1.0, tk.END).strip()
+            try:
+                answers = [
+                    str(float(self.sph_wavelength.get())),
+                    str(float(self.sph_np_real.get())),
+                    str(float(self.sph_np_imag.get())),
+                    str(float(self.sph_nm_real.get())),
+                    str(float(self.sph_nm_imag.get())),
+                    str(float(self.sph_radius.get())),
+                ]
+                if kw == "polarplot_single":
+                    answers.append(str(float(self.sph_theta.get())))
+                elif kw == "polarplot_integrate":
+                    answers += [str(float(self.sph_theta_start.get())),
+                                str(float(self.sph_theta_end.get())),
+                                str(int(self.sph_n_points.get()))]
+                else:
+                    answers.append(str(int(self.sph_n_points.get())))
+            except ValueError as e:
+                messagebox.showerror("Error", f"Invalid value: {e}")
+                return
+
         elif module == "Cylinder":
-            # NLWKB cylinder (use_nlwkb fixed in C): wavelength, n_p, n_m, R, L + angles
-            exe, src = EXE_CYLINDER, SRC_CYLINDER
+            # NLWKB cylinder: wavelength, n_p, n_m, R, L + angles
+            src = SRC_CYLINDER
             kw = self.cyl_keyword.get()
             beta_content = self.txt_beta_cyl.get(1.0, tk.END).strip()
             try:
@@ -1058,6 +1416,63 @@ class PySHSApp(tk.Tk):
                 messagebox.showerror("Error", f"Invalid value: {e}")
                 return
 
+        elif module == "Ellipsoid":
+            # ellipsoid_SHS: use_nlwkb, wavelength, n_p, n_m, a, length=2c + angles
+            src = SRC_ELLIPSOID
+            beta_content = self.txt_beta_ell.get(1.0, tk.END).strip()
+            kw = self.ell_keyword.get()
+            try:
+                answers = [
+                    "1",  # NLWKB (n_p and n_m)
+                    str(float(self.ell_wavelength.get())),
+                    str(float(self.ell_np_real.get())),
+                    str(float(self.ell_np_imag.get())),
+                    str(float(self.ell_nm_real.get())),
+                    str(float(self.ell_nm_imag.get())),
+                    str(float(self.ell_radius.get())),
+                    str(float(self.ell_length.get())),
+                ]
+                if kw == "polarplot_single":
+                    answers.append(str(float(self.ell_theta.get())))
+                elif kw == "polarplot_integrate":
+                    answers += [str(float(self.ell_theta_start.get())),
+                                str(float(self.ell_theta_end.get())),
+                                str(int(self.ell_n_points.get()))]
+                else:
+                    answers.append(str(int(self.ell_n_points.get())))
+            except ValueError as e:
+                messagebox.showerror("Error", f"Invalid value: {e}")
+                return
+
+        elif module == "Cube":
+            # cube_SHS: use_nlwkb, wavelength, n_p, n_m, a, b, c + angles
+            src = SRC_CUBE
+            beta_content = self.txt_beta_cube.get(1.0, tk.END).strip()
+            kw = self.cube_keyword.get()
+            try:
+                answers = [
+                    "1",  # NLWKB
+                    str(float(self.cube_wavelength.get())),
+                    str(float(self.cube_np_real.get())),
+                    str(float(self.cube_np_imag.get())),
+                    str(float(self.cube_nm_real.get())),
+                    str(float(self.cube_nm_imag.get())),
+                    str(float(self.cube_a.get())),
+                    str(float(self.cube_b.get())),
+                    str(float(self.cube_c.get())),
+                ]
+                if kw == "polarplot_single":
+                    answers.append(str(float(self.cube_theta.get())))
+                elif kw == "polarplot_integrate":
+                    answers += [str(float(self.cube_theta_start.get())),
+                                str(float(self.cube_theta_end.get())),
+                                str(int(self.cube_n_points.get()))]
+                else:
+                    answers.append(str(int(self.cube_n_points.get())))
+            except ValueError as e:
+                messagebox.showerror("Error", f"Invalid value: {e}")
+                return
+
         else:
             messagebox.showerror("Error", f"Unknown module: {module}")
             return
@@ -1065,11 +1480,11 @@ class PySHSApp(tk.Tk):
         if not beta_content:
             messagebox.showerror("Error", "Beta tensor is empty.")
             return
-        if not exe.exists():
-            if not compile_source(src, exe, self._log):
-                messagebox.showerror("Error", "Compilation failed.")
-                return
+        if not src.exists():
+            messagebox.showerror("Error", f"Python module not found:\n{src}")
+            return
 
+        _cleanup_old_runs()
         work = tempfile.mkdtemp(prefix="pyshs_", dir=str(WORK_DIR))
         beta_file = Path(work) / "input_beta.txt"
         orient_file = Path(work) / "input_orient.txt"
@@ -1081,17 +1496,24 @@ class PySHSApp(tk.Tk):
                 f.write(orient_content + "\n")
 
         stdin_data = "\n".join(answers) + "\n"
-        # HRS / Sphere / Cylinder: keyword + beta + output
+        # All modules are pure Python: python3 script.py keyword [files...]
+        # HRS / Sphere / Cylinder / Ellipsoid / Cube / Mie: keyword + beta + output
         # SHS: keyword + beta + orientation + output
         if module == "SHS":
-            cmd = [str(exe), kw, str(beta_file), str(orient_file), str(out_file)]
+            cmd = [sys.executable, "-u", str(src), kw, str(beta_file), str(orient_file), str(out_file)]
         else:
-            cmd = [str(exe), kw, str(beta_file), str(out_file)]
+            cmd = [sys.executable, "-u", str(src), kw, str(beta_file), str(out_file)]
 
-        # Force line buffering at OS level (C binary stdout/stderr)
-        # stdbuf comes with coreutils (Linux); no-op if missing.
-        if shutil.which("stdbuf"):
-            cmd = ["stdbuf", "-oL", "-eL"] + cmd
+        # Intensity units / scale, common to all modules (see shs_units.py)
+        try:
+            i_scale_val = float(self.out_i_scale.get())
+        except (ValueError, AttributeError):
+            i_scale_val = 1.0
+        if not (i_scale_val > 0):
+            i_scale_val = 1.0
+        units_choice = self.out_units.get() if hasattr(self, "out_units") else UNITS_CHOICES[0]
+        units_env = UNITS_ENV.get(units_choice, "")
+        self._log(f"Intensity scale factor = {i_scale_val:g}   units = {units_choice}")
 
         self.job_running = True
         self._current_proc = None
@@ -1107,6 +1529,12 @@ class PySHSApp(tk.Tk):
             stdout_lines = []
             stderr_lines = []
             try:
+                run_env = {**os.environ, "LC_ALL": "C"}
+                run_env["PYSHS_I_SCALE"] = str(i_scale_val)
+                if units_env:
+                    run_env["PYSHS_UNITS"] = units_env
+                else:
+                    run_env.pop("PYSHS_UNITS", None)
                 proc = subprocess.Popen(
                     cmd,
                     stdin=subprocess.PIPE,
@@ -1115,7 +1543,7 @@ class PySHSApp(tk.Tk):
                     text=True,
                     bufsize=1,          # line-buffered on Python side
                     cwd=str(work),
-                    env={**os.environ, "LC_ALL": "C"},
+                    env=run_env,
                 )
                 self._current_proc = proc
 
@@ -1172,7 +1600,7 @@ class PySHSApp(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _cancel_calculation(self):
-        """Stop the running C process (if any)."""
+        """Stop the running calculation process (if any)."""
         proc = self._current_proc
         if proc is None:
             self._log("No calculation to stop.")
@@ -1184,7 +1612,7 @@ class PySHSApp(tk.Tk):
             self._log(f"Could not stop process: {e}")
 
     def _set_run_buttons_state(self, state):
-        for attr in ("btn_run_hrs", "btn_run_shs", "btn_run_sphere", "btn_run_cylinder"):
+        for attr in ("btn_run_hrs", "btn_run_shs", "btn_run_sphere", "btn_run_sphere_mie", "btn_run_cylinder", "btn_run_ellipsoid", "btn_run_cube"):
             if hasattr(self, attr):
                 getattr(self, attr).config(state=state)
 
@@ -1213,9 +1641,11 @@ class PySHSApp(tk.Tk):
         else:
             self._log("No out_plot file.")
 
-        # Dipole assembly (SHS)
+        # Dipole assembly (SHS) or particle geometry (continuum models)
         if module == "SHS" and orient_content:
             self._show_assembly_from_text(orient_content)
+        elif module in ("Sphere", "SphereMie", "Cylinder", "Ellipsoid", "Cube"):
+            self._show_particle_geometry(module)
 
         self._log(f"\n*** Calculation {module} finished ***\n")
 
@@ -1231,7 +1661,7 @@ class PySHSApp(tk.Tk):
             self._log(f"Failed to parse out_plot: {e}")
             return
 
-        fig = Figure(figsize=(6, 3.4), dpi=100)
+        fig = Figure(figsize=(8.5, 5.2), dpi=110)
         ax = fig.add_subplot(111)
         if keyword in ("polarplot_single", "polarplot_integrate") and "IV" in data:
             ax.plot(data["gamma"], data["IV"], label="IV", lw=2)
@@ -1256,11 +1686,11 @@ class PySHSApp(tk.Tk):
         else:
             ax.text(0.5, 0.5, "Unrecognized data", ha="center", transform=ax.transAxes)
 
-        fig.tight_layout()
+        fig.subplots_adjust(left=0.12, right=0.96, top=0.90, bottom=0.14)
         self._last_intensity_fig = fig
         canvas = FigureCanvasTkAgg(fig, master=self.plot_intensity_container)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         self.plot_nb.select(self.tab_plot_intensity)
 
     def _show_assembly_from_text(self, content: str):
@@ -1292,7 +1722,7 @@ class PySHSApp(tk.Tk):
         # Arrow length proportional to scale
         scale = max(np.ptp(x), np.ptp(y), np.ptp(z), 1.0) * 0.15
 
-        fig = Figure(figsize=(5.5, 4.5), dpi=100)
+        fig = Figure(figsize=(7.5, 6.2), dpi=110)
         ax = fig.add_subplot(111, projection="3d")
         ax.quiver(x, y, z,
                   scale * np.cos(phi) * np.sin(theta),
@@ -1302,14 +1732,148 @@ class PySHSApp(tk.Tk):
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
-        ax.set_title(f"Dipole assembly (N={len(x)})")
-        fig.tight_layout()
+        ax.set_title(f"Dipole assembly (N={len(x)})", pad=12)
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.90, bottom=0.05)
         self._last_assembly_fig = fig
         canvas = FigureCanvasTkAgg(fig, master=self.plot_assembly_container)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+
+    def _show_particle_geometry(self, module: str):
+        """Draw the continuum particle shape in the Assembly / Geometry tab."""
+        for w in self.plot_assembly_container.winfo_children():
+            w.destroy()
+
+        try:
+            if module in ("Sphere", "SphereMie"):
+                R = float(self.sph_radius.get())
+                title = f"Sphere  R = {R:g} nm"
+                shape = "sphere"
+                dims = (R,)
+            elif module == "Cylinder":
+                R = float(self.cyl_radius.get())
+                L = float(self.cyl_length.get())
+                title = f"Cylinder  R = {R:g} nm,  L = {L:g} nm"
+                shape = "cylinder"
+                dims = (R, L)
+            elif module == "Ellipsoid":
+                a = float(self.ell_radius.get())
+                length = float(self.ell_length.get())
+                c = length / 2.0
+                title = f"Ellipsoid  a = {a:g} nm,  2c = {length:g} nm"
+                shape = "ellipsoid"
+                dims = (a, c)
+            elif module == "Cube":
+                a = float(self.cube_a.get())
+                b = float(self.cube_b.get())
+                c = float(self.cube_c.get())
+                title = f"Box  a={a:g}, b={b:g}, c={c:g} nm"
+                shape = "cube"
+                dims = (a, b, c)
+            else:
+                return
+        except (ValueError, AttributeError) as e:
+            self._log(f"Cannot draw geometry: {e}")
+            return
+
+        fig = Figure(figsize=(7.5, 6.2), dpi=110)
+        ax = fig.add_subplot(111, projection="3d")
+
+        if shape == "sphere":
+            R = dims[0]
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi, 24)
+            x = R * np.outer(np.cos(u), np.sin(v))
+            y = R * np.outer(np.sin(u), np.sin(v))
+            z = R * np.outer(np.ones_like(u), np.cos(v))
+            ax.plot_surface(x, y, z, color="#3b82f6", alpha=0.55, linewidth=0, antialiased=True)
+            # equator + meridians for readability
+            t = np.linspace(0, 2 * np.pi, 80)
+            ax.plot(R * np.cos(t), R * np.sin(t), 0 * t, color="#1e3a8a", lw=1.2)
+            ax.plot(R * np.cos(t), 0 * t, R * np.sin(t), color="#1e3a8a", lw=0.8, alpha=0.7)
+            ax.plot(0 * t, R * np.cos(t), R * np.sin(t), color="#1e3a8a", lw=0.8, alpha=0.7)
+            lim = R * 1.15
+
+        elif shape == "cylinder":
+            R, L = dims
+            z = np.linspace(-L / 2, L / 2, 30)
+            th = np.linspace(0, 2 * np.pi, 40)
+            Th, Z = np.meshgrid(th, z)
+            X = R * np.cos(Th)
+            Y = R * np.sin(Th)
+            ax.plot_surface(X, Y, Z, color="#10b981", alpha=0.55, linewidth=0, antialiased=True)
+            # top / bottom disks
+            for z0 in (-L / 2, L / 2):
+                ax.plot(R * np.cos(th), R * np.sin(th), np.full_like(th, z0), color="#065f46", lw=1.2)
+            lim = max(R, L / 2) * 1.2
+
+        elif shape == "ellipsoid":
+            a, c = dims
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi, 24)
+            x = a * np.outer(np.cos(u), np.sin(v))
+            y = a * np.outer(np.sin(u), np.sin(v))
+            z = c * np.outer(np.ones_like(u), np.cos(v))
+            ax.plot_surface(x, y, z, color="#a855f7", alpha=0.55, linewidth=0, antialiased=True)
+            t = np.linspace(0, 2 * np.pi, 80)
+            ax.plot(a * np.cos(t), a * np.sin(t), 0 * t, color="#6b21a8", lw=1.2)
+            ax.plot(a * np.cos(t), 0 * t, c * np.sin(t), color="#6b21a8", lw=0.8, alpha=0.7)
+            lim = max(a, c) * 1.15
+
+        else:  # cube / box
+            a, b, c = dims
+            # 8 vertices of the box centred at origin
+            verts = np.array([
+                [-a/2, -b/2, -c/2], [a/2, -b/2, -c/2], [a/2, b/2, -c/2], [-a/2, b/2, -c/2],
+                [-a/2, -b/2,  c/2], [a/2, -b/2,  c/2], [a/2, b/2,  c/2], [-a/2, b/2,  c/2],
+            ])
+            edges = [
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7),
+            ]
+            for i, j in edges:
+                ax.plot(*zip(verts[i], verts[j]), color="#ea580c", lw=2)
+            # translucent faces
+            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+            faces = [
+                [verts[i] for i in (0, 1, 2, 3)],
+                [verts[i] for i in (4, 5, 6, 7)],
+                [verts[i] for i in (0, 1, 5, 4)],
+                [verts[i] for i in (2, 3, 7, 6)],
+                [verts[i] for i in (1, 2, 6, 5)],
+                [verts[i] for i in (0, 3, 7, 4)],
+            ]
+            ax.add_collection3d(Poly3DCollection(
+                faces, facecolors="#fb923c", alpha=0.35, edgecolors="#c2410c", linewidths=0.5
+            ))
+            lim = max(a, b, c) / 2 * 1.25
+
+        ax.set_xlim(-lim, lim)
+        ax.set_ylim(-lim, lim)
+        ax.set_zlim(-lim, lim)
+        try:
+            ax.set_box_aspect((1, 1, 1))
+        except Exception:
+            pass
+        ax.set_xlabel("X (nm)")
+        ax.set_ylabel("Y (nm)")
+        ax.set_zlabel("Z (nm)")
+        ax.set_title(title, pad=14)
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.05)
+        self._last_assembly_fig = fig
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_assembly_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        # switch to geometry tab so the user sees it
+        try:
+            self.plot_nb.select(self.tab_plot_assembly)
+        except Exception:
+            pass
 
     def _parse_out_plot(self, path: Path) -> dict:
+
         lines = path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
         start = 0
         if lines:
@@ -1328,15 +1892,17 @@ class PySHSApp(tk.Tk):
             except ValueError:
                 continue
             if len(vals) == 3:
-                g = vals[0]
-                if g <= 2 * np.pi + 0.2:
-                    g = g * 180.0 / np.pi
-                gamma.append(g)
+                gamma.append(vals[0])          # unit decided for the whole file below
                 IV.append(vals[1]); IH.append(vals[2])
             elif len(vals) >= 5:
                 gamma.append(vals[0])
                 IH_0.append(vals[1]); IH_90.append(vals[2])
                 IV_0.append(vals[3]); IV_90.append(vals[4])
+        if IV and gamma and len(gamma) == len(IV) and max(gamma) <= 2 * np.pi + 0.2:
+            # polar plots are written with gamma in radians (HRS, SHS, sphere, cylinder,
+            # ellipsoid, cube, Mie); decided once for the whole file (it used to be decided
+            # row by row, which mixed units in a file)
+            gamma = [g * 180.0 / np.pi for g in gamma]
         result = {"gamma": gamma}
         if IV:
             result["IV"] = IV
