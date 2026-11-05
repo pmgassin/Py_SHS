@@ -40,10 +40,10 @@ import math
 
 import numpy as np
 
-import shs_grid
-import shs_units
-import shs_angles
-import shs_io
+from pyshs import shs_grid
+from pyshs import shs_units
+from pyshs import shs_angles
+from pyshs import shs_io
 
 # ---- discretisation (identical to the C code) ----
 # Minimum / historical grid sizes. The grids are enlarged automatically for large objects

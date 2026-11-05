@@ -20,31 +20,15 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import numpy as np
 
-# Package layout:
-#   <root>/Src/          pure-Python modules + GUI + scripts
-#   <root>/Work/         input/output files, temp jobs, out_plot
-#   <root>/Documentation manuals
-# When frozen with PyInstaller (Windows .exe), base is the folder containing the exe.
-if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys.executable).resolve().parent
-    SRC_DIR = BASE_DIR / "Src"
-    if not SRC_DIR.is_dir():
-        # onefile fallback: data extracted under _MEIPASS
-        meipass = Path(getattr(sys, "_MEIPASS", BASE_DIR))
-        if (meipass / "Src").is_dir():
-            SRC_DIR = meipass / "Src"
-        else:
-            SRC_DIR = BASE_DIR
-else:
-    _SCRIPT_DIR = Path(__file__).resolve().parent
-    if _SCRIPT_DIR.name.lower() == "src":
-        BASE_DIR = _SCRIPT_DIR.parent
-        SRC_DIR = _SCRIPT_DIR
-    else:
-        BASE_DIR = _SCRIPT_DIR
-        SRC_DIR = BASE_DIR / "Src"
-WORK_DIR = BASE_DIR / "Work"
-WORK_DIR.mkdir(exist_ok=True)
+# Package layout (installed with pip):
+#   pyshs/               pure-Python modules + GUI + generation scripts  (SRC_DIR)
+#   ~/PySHS_Work/        input/output files, temp jobs, out_plot          (WORK_DIR)
+# The working directory is NOT inside the package (site-packages may be read-only).
+# It can be changed with the environment variable PYSHS_WORK.
+SRC_DIR = Path(__file__).resolve().parent
+BASE_DIR = SRC_DIR
+WORK_DIR = Path(os.environ.get("PYSHS_WORK", Path.home() / "PySHS_Work")).expanduser()
+WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # Pure-Python modules (no C compilation)
 SRC_HRS = SRC_DIR / "HRS.py"
@@ -1499,10 +1483,12 @@ class PySHSApp(tk.Tk):
         # All modules are pure Python: python3 script.py keyword [files...]
         # HRS / Sphere / Cylinder / Ellipsoid / Cube / Mie: keyword + beta + output
         # SHS: keyword + beta + orientation + output
+        # Modules are run with "python -m pyshs.<module>" so that they work once installed.
+        modname = f"pyshs.{src.stem}"
         if module == "SHS":
-            cmd = [sys.executable, "-u", str(src), kw, str(beta_file), str(orient_file), str(out_file)]
+            cmd = [sys.executable, "-u", "-m", modname, kw, str(beta_file), str(orient_file), str(out_file)]
         else:
-            cmd = [sys.executable, "-u", str(src), kw, str(beta_file), str(out_file)]
+            cmd = [sys.executable, "-u", "-m", modname, kw, str(beta_file), str(out_file)]
 
         # Intensity units / scale, common to all modules (see shs_units.py)
         try:
@@ -1915,6 +1901,11 @@ class PySHSApp(tk.Tk):
         return result
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point of the ``pyshs-gui`` command."""
     app = PySHSApp()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

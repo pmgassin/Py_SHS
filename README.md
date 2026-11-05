@@ -11,6 +11,7 @@ scattered by a molecule or a colloidal / supramolecular structure.
 This release (**V4**) is a **pure-Python / NumPy** rewrite of the original C codes.
 No C compiler is required.
 
+The link to the user guide : https://github.com/pmgassin/Py_SHS/blob/Py_SHS_V4/Documentation/PySHS_User_Manual.pdf
 ---
 
 ## Modules
@@ -33,25 +34,31 @@ Keywords shared by most modules:
 
 ---
 
-## Directory layout
+## Installation
+
+```bash
+pip install py_shs
+```
+
+This installs NumPy, SciPy and matplotlib automatically. The GUI also needs **tkinter**, which
+is part of the standard Python installers for Windows and macOS, but is a separate system
+package on Linux (`sudo apt install python3-tk`).
+
+## Package layout
 
 ```text
-Py_SHS/
-├── run_gui.py              # Launch the GUI (recommended)
-├── README.md
-├── Src/                    # All source code (Python only)
-│   ├── pyshs_gui.py        # Tkinter GUI
-│   ├── HRS.py, SHS.py
-│   ├── sphere_SHS.py, cylinder_SHS.py
-│   ├── ellipsoid_SHS.py, cube_SHS.py
-│   ├── shs_mie.py          # nonlinear Mie theory
-│   ├── graph_*.py, script_*.py   # plots and dipole generators (sphere, spheroid, cylinder)
-│   ├── shs_grid.py, shs_units.py, shs_angles.py, shs_io.py   # shared helpers
-│   └── script_gauss2PySHS.py
-├── Work/                   # Input / output of calculations
-├── tests/                  # Regression and validation suite (python tests/run_tests.py)
-└── Documentation/          # User manual (TeX source and PDF)
+pyshs/                      (installed in site-packages)
+├── pyshs_gui.py            # Tkinter GUI  -> command `pyshs-gui`
+├── HRS.py, SHS.py
+├── sphere_SHS.py, cylinder_SHS.py, ellipsoid_SHS.py, cube_SHS.py
+├── shs_mie.py              # nonlinear Mie theory
+├── graph_*.py, script_*.py # plots and dipole generators (sphere, spheroid, cylinder)
+├── shs_grid.py, shs_units.py, shs_angles.py, shs_io.py   # shared helpers
+└── cli.py                  # console commands pyshs-hrs, pyshs-shs, ...
 ```
+
+Input / output files of the GUI are written in `~/PySHS_Work/`
+(change it with the environment variable `PYSHS_WORK`).
 
 ---
 
@@ -63,6 +70,7 @@ Py_SHS/
 | **NumPy** | Numerical core of all modules |
 | **tkinter** | GUI |
 | **matplotlib** | Plots in the GUI |
+| **SciPy** | Mie computation |
 
 No C compiler (`gcc` / `clang`) is needed.
 
@@ -101,14 +109,13 @@ pip install numpy matplotlib
 ## Run the GUI
 
 ```bash
-python3 run_gui.py
+pyshs-gui
 # or
-python3 Src/pyshs_gui.py
+python -m pyshs
 ```
 
-The GUI starts immediately: all calculation modules are pure Python scripts
-and are invoked with the same interpreter. Progress is streamed live in the
-log panel.
+All calculation modules are pure Python and are invoked with the same interpreter
+(`python -m pyshs.<module>`). Progress is streamed live in the log panel.
 
 ---
 
@@ -121,17 +128,20 @@ on stdin).
 Examples (from the package root, with a beta file `beta.txt`):
 
 ```bash
+# Commands: pyshs-hrs, pyshs-shs, pyshs-sphere, pyshs-mie, pyshs-cylinder,
+# pyshs-ellipsoid, pyshs-cube  (or: python -m pyshs.HRS ...)
+
 # HRS polar plot at 90°
-printf "800\n1.33\n0.0\n90\n" | python3 Src/HRS.py polarplot_single beta.txt out_hrs.txt
+printf "800\n1.33\n0.0\n90\n" | pyshs-hrs polarplot_single beta.txt out_hrs.txt
 
 # SHS (N dipoles + orientation file)
-printf "100\n800\n1.33\n0.0\n90\n" | python3 Src/SHS.py polarplot_single beta.txt orient.txt out_shs.txt
+printf "100\n800\n1.33\n0.0\n90\n" | pyshs-shs polarplot_single beta.txt orient.txt out_shs.txt
 
 # Sphere NLWKB
-printf "1\n800\n1.5\n0.0\n1.33\n0.0\n50\n90\n" | python3 Src/sphere_SHS.py polarplot_single beta.txt out_sph.txt
+printf "1\n800\n1.5\n0.0\n1.33\n0.0\n50\n90\n" | pyshs-sphere polarplot_single beta.txt out_sph.txt
 
 # Cylinder
-printf "800\n1.5\n0.0\n1.33\n0.0\n20\n80\n90\n" | python3 Src/cylinder_SHS.py polarplot_single beta.txt out_cyl.txt
+printf "800\n1.5\n0.0\n1.33\n0.0\n20\n80\n90\n" | pyshs-cylinder polarplot_single beta.txt out_cyl.txt
 ```
 
 Environment variables:
@@ -175,7 +185,7 @@ phi  theta  psi  x  y  z
   equivalent NumPy implementations with the **same physics and the same
   stdin / file protocol**.
 - The GUI no longer compiles anything; it launches
-  `python -u Src/<module>.py …`.
+  `python -u -m pyshs.<module> …`.
 - The `bin/` directory is unused (kept only for backward compatibility of
   the folder layout).
 - Dependencies: Python 3 + NumPy (+ SciPy for `shs_mie.py`; tkinter / matplotlib for the GUI).
@@ -223,7 +233,7 @@ previous grid (e.g. to reproduce earlier results). Grid sizes (N_PHI, N_THETA, .
 All intensities contain the phase factor exp(i q.r) with |q| <= q_max = 2 Re(k_w) + Re(K_2w).
 A grid that is fine for a small object silently becomes under-resolved for a large one, so the
 grids are now sized from the size parameter `a = q_max x (largest half-extent)` by
-`Src/shs_grid.py` (rules calibrated numerically against very fine reference grids; typical
+`pyshs/shs_grid.py` (rules calibrated numerically against very fine reference grids; typical
 error <= 1e-4, usually ~1e-7):
 
 | Module | What is sized | Rule |
@@ -335,7 +345,7 @@ overwrites them.
 - `polarplot_integrate` is a plain average over the scattering angles, not weighted by `sin(Theta)`.
 - The sphere and Mie outputs do not contain `b1`, `b2` (they are zero anyway, see the legacy note).
 
-**Generators and converters (`Src/`).**
+**Generators and converters (`pyshs/`).**
 - `script_sphere.py`, `script_sphere_random.py`, `script_spheroid_random.py`,
   `script_cylinder_random.py`: write `phi theta psi x y z` files for `SHS.py` (dipoles along the
   outward normal; disorder = Gaussian noise on `phi`, `theta`; a noise on `phi` is a real tilt of
@@ -347,7 +357,7 @@ overwrites them.
 - `graph_assembly.py orientation_file image.png [--positions-first]` expects `phi theta psi x y z`.
 
 **GUI.** The "Intensity units" selector and the scale factor apply to every module; run
-directories `Work/pyshs_*` older than 7 days are removed automatically; the unit of polar plots
+directories `~/PySHS_Work/pyshs_*` older than 7 days are removed automatically; the unit of polar plots
 (radians) is decided once per file.
 
 **Manual.** `Documentation/PySHS_User_Manual.tex` was updated (installation without compiler,
