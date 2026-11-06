@@ -9,8 +9,7 @@ description = "Second Harmonic Scattering (SHS) and Hyper-Rayleigh Scattering (H
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
-authors = 
-    [{ name = "Pierre-Marie Gassin" , email="pierre-marie.gassin@enscm.fr"}]
+authors = [{ name = "Pierre-Marie Gassin" , email="pierre-marie.gassin@enscm.fr"}]
 keywords = ["second harmonic scattering", "SHS", "HRS", "hyper-Rayleigh", "nonlinear optics", "hyperpolarizability"]
 classifiers = [
     "Development Status :: 4 - Beta",
