@@ -1902,7 +1902,7 @@ class PySHSApp(tk.Tk):
 
 
 def main():
-    """Entry point of the ``pyshs-gui`` command."""
+    """Entry point of the ``pyshs-optics-gui`` command."""
     app = PySHSApp()
     app.mainloop()
 

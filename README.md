@@ -1,7 +1,7 @@
 # Py_SHS – A Python Second Harmonic Scattering package.
 
-[![PyPI version](https://img.shields.io/pypi/v/py-shs.svg)](https://pypi.org/project/py-shs/)
-[![Python versions](https://img.shields.io/pypi/pyversions/py-shs.svg)](https://pypi.org/project/py-shs/)
+[![PyPI version](https://img.shields.io/pypi/v/pyshs-optics.svg)](https://pypi.org/project/pyshs-optics/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pyshs-optics.svg)](https://pypi.org/project/pyshs-optics/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pmgassin/Py_SHS/blob/Py_SHS_V4/LICENSE)
 [![User guide](https://img.shields.io/badge/docs-User%20Manual%20(PDF)-orange.svg)](https://github.com/pmgassin/Py_SHS/blob/Py_SHS_V4/Documentation/PySHS_User_Manual.pdf)
 
@@ -51,7 +51,7 @@ NumPy, SciPy and matplotlib are installed automatically by `pip`.
 ### 2. Install with pip
 
 ```bash
-pip install py-shs
+pip install pyshs-optics
 ```
 
 That's it. Check that the installation worked:
@@ -66,14 +66,14 @@ python -c "import py_shs; print(py_shs.__version__)"
 > ```bash
 > python3 -m venv pyshs-env
 > source pyshs-env/bin/activate        # Windows: pyshs-env\Scripts\activate
-> pip install py-shs
+> pip install pyshs-optics
 > ```
 
 ### 3. Update or uninstall
 
 ```bash
-pip install --upgrade py-shs
-pip uninstall py-shs
+pip install --upgrade pyshs-optics
+pip uninstall pyshs-optics
 ```
 
 ### tkinter not found?
@@ -96,7 +96,7 @@ The command-line programs do not need tkinter.
 Once the package is installed, open a terminal and type:
 
 ```bash
-pyshs-gui
+pyshs-optics-gui
 ```
 
 or, equivalently:
@@ -120,10 +120,10 @@ variable `PYSHS_WORK`:
 
 ```bash
 export PYSHS_WORK=/path/to/my/calculations      # macOS / Linux
-pyshs-gui
+pyshs-optics-gui
 ```
 
-If the `pyshs-gui` command is not found, use `python -m py_shs` instead, which always works.
+If the `pyshs-optics-gui` command is not found, use `python -m py_shs` instead, which always works.
 
 📖 The full description of the interface and of the physical models is in the
 **[User Manual (PDF)](https://github.com/pmgassin/Py_SHS/blob/Py_SHS_V4/Documentation/PySHS_User_Manual.pdf)**.
@@ -137,29 +137,29 @@ optional orientation file and the output file; the numerical parameters are read
 
 | Command | Module |
 |---------|--------|
-| `pyshs-hrs` | HRS |
-| `pyshs-shs` | SHS (dipole assembly) |
-| `pyshs-sphere` | Sphere (NLRGD / NLWKB) |
-| `pyshs-mie` | Nonlinear Mie theory |
-| `pyshs-cylinder` | Cylinder |
-| `pyshs-ellipsoid` | Ellipsoid |
-| `pyshs-cube` | Cube / box |
+| `pyshs-optics-hrs` | HRS |
+| `pyshs-optics-shs` | SHS (dipole assembly) |
+| `pyshs-optics-sphere` | Sphere (NLRGD / NLWKB) |
+| `pyshs-optics-mie` | Nonlinear Mie theory |
+| `pyshs-optics-cylinder` | Cylinder |
+| `pyshs-optics-ellipsoid` | Ellipsoid |
+| `pyshs-optics-cube` | Cube / box |
 
 Examples (macOS / Linux shell; on Windows use Git Bash or WSL), with a beta file `beta.txt`
 in the current folder:
 
 ```bash
 # HRS polar plot at 90°
-printf "800\n1.33\n0.0\n90\n" | pyshs-hrs polarplot_single beta.txt out_hrs.txt
+printf "800\n1.33\n0.0\n90\n" | pyshs-optics-hrs polarplot_single beta.txt out_hrs.txt
 
 # SHS (N dipoles + orientation file)
-printf "100\n800\n1.33\n0.0\n90\n" | pyshs-shs polarplot_single beta.txt orient.txt out_shs.txt
+printf "100\n800\n1.33\n0.0\n90\n" | pyshs-optics-shs polarplot_single beta.txt orient.txt out_shs.txt
 
 # Sphere NLWKB
-printf "1\n800\n1.5\n0.0\n1.33\n0.0\n50\n90\n" | pyshs-sphere polarplot_single beta.txt out_sph.txt
+printf "1\n800\n1.5\n0.0\n1.33\n0.0\n50\n90\n" | pyshs-optics-sphere polarplot_single beta.txt out_sph.txt
 
 # Cylinder
-printf "800\n1.5\n0.0\n1.33\n0.0\n20\n80\n90\n" | pyshs-cylinder polarplot_single beta.txt out_cyl.txt
+printf "800\n1.5\n0.0\n1.33\n0.0\n20\n80\n90\n" | pyshs-optics-cylinder polarplot_single beta.txt out_cyl.txt
 ```
 
 Every module can also be started with `python -m py_shs.<module>` (for example `python -m py_shs.HRS`).
@@ -214,13 +214,13 @@ The notes below describe the numerical conventions of this version. Click a titl
 
 ```text
 py_shs/                      (installed in site-packages)
-├── pyshs_gui.py            # Tkinter GUI  -> command `pyshs-gui`
+├── pyshs_gui.py            # Tkinter GUI  -> command `pyshs-optics-gui`
 ├── HRS.py, SHS.py
 ├── sphere_SHS.py, cylinder_SHS.py, ellipsoid_SHS.py, cube_SHS.py
 ├── shs_mie.py              # nonlinear Mie theory
 ├── graph_*.py, script_*.py # plots and dipole generators (sphere, spheroid, cylinder)
 ├── shs_grid.py, shs_units.py, shs_angles.py, shs_io.py   # shared helpers
-└── cli.py                  # console commands pyshs-hrs, pyshs-shs, ...
+└── cli.py                  # console commands pyshs-optics-hrs, pyshs-optics-shs, ...
 ```
 
 All calculation modules are pure Python and are invoked with the same interpreter

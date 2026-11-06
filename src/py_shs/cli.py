@@ -1,4 +1,4 @@
-"""Console entry points (``pyshs-hrs``, ``pyshs-shs`` ...).
+"""Console entry points (``pyshs-optics-hrs``, ``pyshs-optics-shs`` ...).
 
 Each command keeps the historical protocol of the scripts:
     pyshs-<module> <keyword> <beta_file> [<orientation_file>] <output_file>
@@ -38,11 +38,11 @@ def cube():
 
 
 def mie():
-    """pyshs-mie <keyword> <beta_file> <output_file>  (parameters on stdin)."""
+    """pyshs-optics-mie <keyword> <beta_file> <output_file>  (parameters on stdin)."""
     import os
     from py_shs import shs_mie
     if len(sys.argv) < 4:
-        print("Usage: pyshs-mie <keyword> <beta_file> <output_file>   (answers on stdin)")
+        print("Usage: pyshs-optics-mie <keyword> <beta_file> <output_file>   (answers on stdin)")
         sys.exit(1)
     kw, beta_f, out_f = sys.argv[1:4]
     answers = [line.strip() for line in sys.stdin if line.strip()]
