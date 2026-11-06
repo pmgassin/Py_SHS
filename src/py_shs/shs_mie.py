@@ -46,8 +46,8 @@ Les intensites sont donc en unites arbitraires (|chi E0^2|^2).
 import math
 import numpy as np
 
-from pyshs import shs_units
-from pyshs import shs_angles
+from py_shs import shs_units
+from py_shs import shs_angles
 from numpy.polynomial.legendre import leggauss
 from scipy.special import spherical_jn, spherical_yn, lpmv, gammaln
 

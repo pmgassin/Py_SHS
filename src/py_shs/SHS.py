@@ -51,10 +51,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 
-from pyshs import shs_grid
-from pyshs import shs_units
-from pyshs import shs_angles
-from pyshs import shs_io
+from py_shs import shs_grid
+from py_shs import shs_units
+from py_shs import shs_angles
+from py_shs import shs_io
 
 # ---- orientation grid of the whole assembly (same values as the C code) ----
 PAS = 10

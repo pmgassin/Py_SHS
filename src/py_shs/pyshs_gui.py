@@ -21,7 +21,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import numpy as np
 
 # Package layout (installed with pip):
-#   pyshs/               pure-Python modules + GUI + generation scripts  (SRC_DIR)
+#   py_shs/               pure-Python modules + GUI + generation scripts  (SRC_DIR)
 #   ~/PySHS_Work/        input/output files, temp jobs, out_plot          (WORK_DIR)
 # The working directory is NOT inside the package (site-packages may be read-only).
 # It can be changed with the environment variable PYSHS_WORK.
@@ -1483,8 +1483,8 @@ class PySHSApp(tk.Tk):
         # All modules are pure Python: python3 script.py keyword [files...]
         # HRS / Sphere / Cylinder / Ellipsoid / Cube / Mie: keyword + beta + output
         # SHS: keyword + beta + orientation + output
-        # Modules are run with "python -m pyshs.<module>" so that they work once installed.
-        modname = f"pyshs.{src.stem}"
+        # Modules are run with "python -m py_shs.<module>" so that they work once installed.
+        modname = f"py_shs.{src.stem}"
         if module == "SHS":
             cmd = [sys.executable, "-u", "-m", modname, kw, str(beta_file), str(orient_file), str(out_file)]
         else:

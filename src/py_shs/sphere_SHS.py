@@ -39,10 +39,10 @@ import math
 
 import numpy as np
 
-from pyshs import shs_grid
-from pyshs import shs_units
-from pyshs import shs_angles
-from pyshs import shs_io
+from py_shs import shs_grid
+from py_shs import shs_units
+from py_shs import shs_angles
+from py_shs import shs_io
 
 PI = math.pi
 

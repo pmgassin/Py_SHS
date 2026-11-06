@@ -11,9 +11,9 @@ MODULES = ["HRS", "SHS", "sphere_SHS", "shs_mie", "cylinder_SHS", "ellipsoid_SHS
 
 @pytest.mark.parametrize("name", MODULES)
 def test_import(name):
-    importlib.import_module(f"pyshs.{name}")
+    importlib.import_module(f"py_shs.{name}")
 
 
 def test_version():
-    import pyshs
-    assert pyshs.__version__
+    import py_shs
+    assert py_shs.__version__

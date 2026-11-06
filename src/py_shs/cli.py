@@ -9,7 +9,7 @@ import sys
 
 
 def _run(module_name):
-    mod = importlib.import_module(f"pyshs.{module_name}")
+    mod = importlib.import_module(f"py_shs.{module_name}")
     sys.exit(mod.main(sys.argv))
 
 
@@ -40,7 +40,7 @@ def cube():
 def mie():
     """pyshs-mie <keyword> <beta_file> <output_file>  (parameters on stdin)."""
     import os
-    from pyshs import shs_mie
+    from py_shs import shs_mie
     if len(sys.argv) < 4:
         print("Usage: pyshs-mie <keyword> <beta_file> <output_file>   (answers on stdin)")
         sys.exit(1)

@@ -39,9 +39,9 @@ import math
 
 import numpy as np
 
-from pyshs import shs_units
-from pyshs import shs_angles
-from pyshs import shs_io
+from py_shs import shs_units
+from py_shs import shs_angles
+from py_shs import shs_io
 
 # ---- orientation grid (same values as SHS.py / the C code) ----
 PAS = 10

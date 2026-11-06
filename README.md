@@ -47,7 +47,7 @@ package on Linux (`sudo apt install python3-tk`).
 ## Package layout
 
 ```text
-pyshs/                      (installed in site-packages)
+py_shs/                      (installed in site-packages)
 ├── pyshs_gui.py            # Tkinter GUI  -> command `pyshs-gui`
 ├── HRS.py, SHS.py
 ├── sphere_SHS.py, cylinder_SHS.py, ellipsoid_SHS.py, cube_SHS.py
@@ -111,11 +111,11 @@ pip install numpy matplotlib
 ```bash
 pyshs-gui
 # or
-python -m pyshs
+python -m py_shs
 ```
 
 All calculation modules are pure Python and are invoked with the same interpreter
-(`python -m pyshs.<module>`). Progress is streamed live in the log panel.
+(`python -m py_shs.<module>`). Progress is streamed live in the log panel.
 
 ---
 
@@ -129,7 +129,7 @@ Examples (from the package root, with a beta file `beta.txt`):
 
 ```bash
 # Commands: pyshs-hrs, pyshs-shs, pyshs-sphere, pyshs-mie, pyshs-cylinder,
-# pyshs-ellipsoid, pyshs-cube  (or: python -m pyshs.HRS ...)
+# pyshs-ellipsoid, pyshs-cube  (or: python -m py_shs.HRS ...)
 
 # HRS polar plot at 90°
 printf "800\n1.33\n0.0\n90\n" | pyshs-hrs polarplot_single beta.txt out_hrs.txt
@@ -185,7 +185,7 @@ phi  theta  psi  x  y  z
   equivalent NumPy implementations with the **same physics and the same
   stdin / file protocol**.
 - The GUI no longer compiles anything; it launches
-  `python -u -m pyshs.<module> …`.
+  `python -u -m py_shs.<module> …`.
 - The `bin/` directory is unused (kept only for backward compatibility of
   the folder layout).
 - Dependencies: Python 3 + NumPy (+ SciPy for `shs_mie.py`; tkinter / matplotlib for the GUI).
@@ -233,7 +233,7 @@ previous grid (e.g. to reproduce earlier results). Grid sizes (N_PHI, N_THETA, .
 All intensities contain the phase factor exp(i q.r) with |q| <= q_max = 2 Re(k_w) + Re(K_2w).
 A grid that is fine for a small object silently becomes under-resolved for a large one, so the
 grids are now sized from the size parameter `a = q_max x (largest half-extent)` by
-`pyshs/shs_grid.py` (rules calibrated numerically against very fine reference grids; typical
+`py_shs/shs_grid.py` (rules calibrated numerically against very fine reference grids; typical
 error <= 1e-4, usually ~1e-7):
 
 | Module | What is sized | Rule |
@@ -345,7 +345,7 @@ overwrites them.
 - `polarplot_integrate` is a plain average over the scattering angles, not weighted by `sin(Theta)`.
 - The sphere and Mie outputs do not contain `b1`, `b2` (they are zero anyway, see the legacy note).
 
-**Generators and converters (`pyshs/`).**
+**Generators and converters (`py_shs/`).**
 - `script_sphere.py`, `script_sphere_random.py`, `script_spheroid_random.py`,
   `script_cylinder_random.py`: write `phi theta psi x y z` files for `SHS.py` (dipoles along the
   outward normal; disorder = Gaussian noise on `phi`, `theta`; a noise on `phi` is a real tilt of

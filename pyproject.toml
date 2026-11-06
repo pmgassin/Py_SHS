@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py_shs"
-version = "4.0.0"
+version = "4.0.1"
 description = "Second Harmonic Scattering (SHS) and Hyper-Rayleigh Scattering (HRS) calculations - pure Python / NumPy"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -34,14 +34,14 @@ Repository = "https://github.com/pmgassin/Py_SHS"
 Issues = "https://github.com/pmgassin/Py_SHS/issues"
 
 [project.scripts]
-pyshs-gui = "pyshs.pyshs_gui:main"
-pyshs-hrs = "pyshs.cli:hrs"
-pyshs-shs = "pyshs.cli:shs"
-pyshs-sphere = "pyshs.cli:sphere"
-pyshs-mie = "pyshs.cli:mie"
-pyshs-cylinder = "pyshs.cli:cylinder"
-pyshs-ellipsoid = "pyshs.cli:ellipsoid"
-pyshs-cube = "pyshs.cli:cube"
+pyshs-gui = "py_shs.pyshs_gui:main"
+pyshs-hrs = "py_shs.cli:hrs"
+pyshs-shs = "py_shs.cli:shs"
+pyshs-sphere = "py_shs.cli:sphere"
+pyshs-mie = "py_shs.cli:mie"
+pyshs-cylinder = "py_shs.cli:cylinder"
+pyshs-ellipsoid = "py_shs.cli:ellipsoid"
+pyshs-cube = "py_shs.cli:cube"
 
 [tool.setuptools.packages.find]
 where = ["src"]

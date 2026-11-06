@@ -1,32 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ellipsoid_SHS.py  --  Py_SHS : Coherent SHS by an ellipsoid of revolution (Python / NumPy)
+cube_SHS.py  --  Py_SHS : Coherent SHS by a rectangular box / cube (Python / NumPy)
 
-Python version of ellipsoid_SHS.c.  Same physics, same input protocol,
-same output files.
+Python version of cube_SHS.c.  Same physics, same input protocol, same outputs.
 
 Physical model
 --------------
-Spheroid (ellipsoid of revolution) with equatorial radius a and half-length c
-along the symmetry axis (c = L/2).
+Rectangular box a x b x c (cube if a=b=c).  Six flat faces with normals
++-x, +-y, +-z.  Face integrals are done analytically:
 
-  x = a sin(alpha) cos(beta)
-  y = a sin(alpha) sin(beta)       alpha in [0, pi], beta in [0, 2 pi]
-  z = c cos(alpha)
+  int_face exp(i Phi) dS = Area * exp(i Phi_centre) * sinc(Xu/2) * sinc(Xv/2)
 
-Local surface frame of the ki(2) tensor (same convention as the cylinder):
-  local x = meridian tangent
-  local y = azimuthal tangent
-  local z = outward surface normal
-
-Surface integration is coherent (amplitudes); orientation average is
-incoherent (intensities), normalised by the sum of orientation weights,
-then multiplied by the radiative prefactor (|K_2ω|²/4π)².
+Orientation average over the full rotation group (phi, theta, psi):
+  phi, psi : midpoint rule on [0, 2pi)
+  cos(theta) : Gauss-Legendre
 
 Keywords : polarplot_single | polarplot_integrate | angle_scattering
-Usage    : python ellipsoid_SHS.py keyword ki2_input_file output_file
-stdin    : NLWKB flag, wavelength, refractive index(es), a, length, then angle(s)
+Usage    : python cube_SHS.py keyword ki2_input_file output_file
+stdin    : NLWKB flag, wavelength, refractive index(es), a, b, c, then angle(s)
 
 Environment
 -----------
@@ -38,29 +30,26 @@ import math
 
 import numpy as np
 
-from pyshs import shs_grid
-from pyshs import shs_units
-from pyshs import shs_angles
-from pyshs import shs_io
+from py_shs import shs_grid
+from py_shs import shs_units
+from py_shs import shs_angles
+from py_shs import shs_io
 
 PI = math.pi
 
-# ---- numerical sampling (same defaults as the C code) ----
-# Minimum / historical grid sizes; enlarged automatically for large particles
-# (see shs_grid.py; PYSHS_GRID=fixed keeps these values).
-N_ALPHA = 30       # surface points along alpha (minimum)
-N_BETA = 20        # surface points along beta (minimum)
-N_PHI = 20         # orientations: phi in [0, 2pi) (minimum)
-N_THETA = 20       # orientations: theta in [0, pi] (minimum)
-GRID_USED = [N_ALPHA, N_BETA, N_PHI, N_THETA]   # grid actually used (set in main)
+# ---- orientation sampling: minimum / historical sizes (same defaults as the C code) ----
+# enlarged automatically for large boxes (see shs_grid.py; PYSHS_GRID=fixed keeps these)
+N_PHI = 24
+N_THETA = 24
+N_PSI = 24
+GRID_USED = [N_PHI, N_THETA, N_PSI]   # grid actually used (set in main)
+NFACES = 6
 
 
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
 class TokenReader:
-    """Reads whitespace-separated values from stdin like C scanf."""
-
     def __init__(self):
         self.buf = []
 
@@ -84,7 +73,6 @@ def say(text="", end="\n"):
 
 
 def euler_zyz(phi, theta, psi):
-    """Single ZYZ Euler matrix (3, 3). lab = T @ particle."""
     cp, sp = math.cos(phi), math.sin(phi)
     ct, st = math.cos(theta), math.sin(theta)
     cs, ss = math.cos(psi), math.sin(psi)
@@ -102,14 +90,18 @@ def euler_zyz(phi, theta, psi):
 
 
 def rotate_tensor(M, beta):
-    """out[i,j,k] = sum_abc M[i,a] M[j,b] M[k,c] beta[a,b,c]."""
     t1 = np.einsum("ia,abc->ibc", M, beta)
     t2 = np.einsum("jb,ibc->ijc", M, t1)
     return np.einsum("kc,ijc->ijk", M, t2)
 
 
+def cross3(a, b):
+    return np.array([a[1] * b[2] - a[2] * b[1],
+                     a[2] * b[0] - a[0] * b[2],
+                     a[0] * b[1] - a[1] * b[0]])
+
+
 def read_ki(name):
-    """1 header line + 27 lines 'name value'."""
     ki = np.zeros((3, 3, 3))
     try:
         with open(name, "rt") as f:
@@ -131,136 +123,191 @@ def read_ki(name):
     return ki
 
 
-# --------------------------------------------------------------------------
-# Surface grid
-# --------------------------------------------------------------------------
-def build_surface(a, c, ki, n_alpha=None, n_beta=None):
-    """Build surface points: positions, weights, ki(2) in the particle frame.
+def gauss_legendre(n):
+    """Gauss-Legendre nodes x in (-1,1) and weights w (sum = 2)."""
+    x = np.empty(n)
+    w = np.empty(n)
+    m = (n + 1) // 2
+    for i in range(m):
+        z = math.cos(PI * (i + 0.75) / (n + 0.5))
+        while True:
+            p1, p2 = 1.0, 0.0
+            for j in range(n):
+                p3 = p2
+                p2 = p1
+                p1 = ((2.0 * j + 1.0) * z * p2 - j * p3) / (j + 1.0)
+            pp = n * (z * p1 - p2) / (z * z - 1.0)
+            z1 = z
+            z = z1 - p1 / pp
+            if abs(z - z1) <= 1e-14:
+                break
+        x[i] = -z
+        x[n - 1 - i] = z
+        ww = 2.0 / ((1.0 - z * z) * pp * pp)
+        w[i] = ww
+        w[n - 1 - i] = ww
+    return x, w
 
-    Gauss-Legendre in u = cos(alpha) (the area element a*N(u) du dbeta is smooth in u)
-    and periodic trapezoid in beta.  PYSHS_THETA_RULE=midpoint restores the former
-    mid-point rule in alpha.
 
-    Returns arrays:
-      r   (NPTS, 3)   positions
-      w   (NPTS,)     surface element weights
-      P   (NPTS, 3, 3, 3)  ki(2) in particle frame
+def csinc(x):
+    """sin(x)/x for complex x."""
+    if abs(x) < 1e-4:
+        x2 = x * x
+        return 1.0 - x2 / 6.0 + x2 * x2 / 120.0
+    return np.sin(x) / x
+
+
+def csinc_array(x):
+    """sin(x)/x for complex arrays (series near 0)."""
+    x = np.asarray(x, dtype=np.complex128)
+    small = np.abs(x) < 1e-4
+    xs = np.where(small, 1.0, x)
+    x2 = x * x
+    return np.where(small, 1.0 - x2 / 6.0 + x2 * x2 / 120.0, np.sin(xs) / xs)
+
+
+# --------------------------------------------------------------------------
+# Faces of the box
+# --------------------------------------------------------------------------
+def build_faces(a, b, c, ki):
+    """Build the 6 faces: geometry, local frame, ki(2) in particle frame.
+
+    Returns list of dicts with keys: r0, u, v, area, P.
     """
-    n_alpha = N_ALPHA if n_alpha is None else n_alpha
-    n_beta = N_BETA if n_beta is None else n_beta
-    hbe = 2.0 * PI / n_beta
+    ha, hb, hc = a / 2, b / 2, c / 2
+    defs = [
+        # n, r0, u, v
+        (np.array([1., 0, 0]), np.array([ha, 0, 0]), np.array([0., b, 0]), np.array([0., 0, c])),
+        (np.array([-1., 0, 0]), np.array([-ha, 0, 0]), np.array([0., b, 0]), np.array([0., 0, c])),
+        (np.array([0, 1., 0]), np.array([0, hb, 0]), np.array([a, 0., 0]), np.array([0., 0, c])),
+        (np.array([0, -1., 0]), np.array([0, -hb, 0]), np.array([a, 0., 0]), np.array([0., 0, c])),
+        (np.array([0, 0, 1.]), np.array([0, 0, hc]), np.array([a, 0., 0]), np.array([0., b, 0])),
+        (np.array([0, 0, -1.]), np.array([0, 0, -hc]), np.array([a, 0., 0]), np.array([0., b, 0])),
+    ]
+    ez = np.array([0., 0., 1.])
+    faces = []
 
-    if os.environ.get("PYSHS_THETA_RULE", "gauss").strip().lower() == "midpoint":
-        al = (np.arange(n_alpha) + 0.5) * (PI / n_alpha)
-        ca, sa = np.cos(al), np.sin(al)
-        wal = np.full(n_alpha, PI / n_alpha) * sa            # weight in alpha: sin(al) dal
-    else:
-        ca, wal = np.polynomial.legendre.leggauss(n_alpha)   # u = cos(alpha), weight du
-        sa = np.sqrt(1.0 - ca * ca)
-    be = (np.arange(n_beta) + 0.5) * hbe
-    sb, cb = np.sin(be), np.cos(be)
+    for n, r0, u, v in defs:
+        uxv = cross3(u, v)
+        area = float(np.linalg.norm(uxv))
 
-    # arrays of shape (n_alpha, n_beta)
-    SAg = sa[:, None] * np.ones((1, n_beta))
-    CAg = ca[:, None] * np.ones((1, n_beta))
-    CBg = np.ones((n_alpha, 1)) * cb[None, :]
-    SBg = np.ones((n_alpha, 1)) * sb[None, :]
-    Nfac = np.sqrt(c * c * SAg ** 2 + a * a * CAg ** 2)
+        if abs(n[2]) > 0.5:          # caps
+            xl = np.array([n[2], 0., 0.])
+            yl = np.array([0., 1., 0.])
+        else:                        # lateral (cylinder convention)
+            xl = np.array([0., 0., -1.])
+            yl = cross3(ez, n)
 
-    r = np.stack([a * SAg * CBg, a * SAg * SBg, c * CAg], axis=-1).reshape(-1, 3)
-    # area element: a sin(al) N(al) dal dbeta = a N(u) du dbeta   (u = cos al)
-    w = (a * Nfac * wal[:, None] * hbe).reshape(-1)
-    t = np.stack([a * CAg * CBg / Nfac, a * CAg * SBg / Nfac, -c * SAg / Nfac], axis=-1)
-    ph = np.stack([-SBg, CBg, np.zeros_like(SBg)], axis=-1)
-    n = np.stack([c * SAg * CBg / Nfac, c * SAg * SBg / Nfac, a * CAg / Nfac], axis=-1)
-    S = np.stack([t, ph, n], axis=-1).reshape(-1, 3, 3)     # columns = local axes
-    P = np.einsum("nia,njb,nkc,abc->nijk", S, S, S, ki)      # local -> particle frame
-    return r, w, P
+        S = np.column_stack((xl, yl, n))
+        # safety: right-handed
+        chk = cross3(xl, yl)
+        if np.abs(chk - n).sum() > 1e-12:
+            raise RuntimeError("local frame is not right-handed")
+
+        P = rotate_tensor(S, ki)
+        faces.append({"r0": r0, "u": u, "v": v, "area": area, "P": P})
+
+    return faces
 
 
 # --------------------------------------------------------------------------
 # Core calculation
 # --------------------------------------------------------------------------
-def theta_rule(n):
-    """Quadrature nodes/weights for  int_0^pi f(theta) sin(theta) dtheta.
+def compute_coefficients(Theta, petitk, grandk, scale, faces,
+                         n_phi=None, n_theta=None, n_psi=None, max_elems=2_000_000):
+    """Orientation average for a list of scattering angles (vectorised over orientations).
 
-    Default: Gauss-Legendre in cos(theta) (exact for polynomials of degree <= 2n-1,
-    weights sum to exactly 2).  PYSHS_THETA_RULE=midpoint restores the former midpoint
-    rule (weights h*sin(theta), sum slightly different from 2).
-    """
-    if os.environ.get("PYSHS_THETA_RULE", "gauss").strip().lower() == "midpoint":
-        h = PI / n
-        th = (np.arange(n) + 0.5) * h
-        return th, h * np.sin(th)
-    x, wl = np.polynomial.legendre.leggauss(n)
-    return np.arccos(x), wl
-
-
-
-def compute_coefficients(Theta, petitk, grandk, scale, r, w, P, n_phi=None, n_theta=None):
-    """Orientation average of SHS intensity for a list of scattering angles.
-
-    Orientations: n_phi trapezoid points in phi x n_theta Gauss-Legendre points in
-    cos(theta) (the particle is axisymmetric, no psi).
-    Returns coefV[nang, 5], coefH[nang, 5] already normalised and scaled.
+    Returns coefV[nang,5], coefH[nang,5] already normalised and scaled.
     """
     n_phi = N_PHI if n_phi is None else n_phi
     n_theta = N_THETA if n_theta is None else n_theta
+    n_psi = N_PSI if n_psi is None else n_psi
     nang = len(Theta)
     Theta = np.asarray(Theta, dtype=np.float64)
+    ugl, wgl = gauss_legendre(n_theta)
     dphi = 2.0 * PI / n_phi
-    th_nodes, th_w = theta_rule(n_theta)
+    dpsi = 2.0 * PI / n_psi
+
+    # all orientations
+    i, j, k = np.meshgrid(np.arange(n_phi), np.arange(n_theta), np.arange(n_psi),
+                          indexing="ij")
+    phi = (i.ravel() + 0.5) * dphi
+    th = np.arccos(ugl[j.ravel()])
+    psi = (k.ravel() + 0.5) * dpsi
+    wori_all = wgl[j.ravel()] * dphi * dpsi
+    norient = phi.size
+    cp, sp, ct, st, cs_, ss_ = (np.cos(phi), np.sin(phi), np.cos(th), np.sin(th),
+                                np.cos(psi), np.sin(psi))
+    Tall = np.empty((norient, 3, 3))          # same convention as euler_zyz
+    Tall[:, 0, 0] = cp * ct * cs_ - sp * ss_
+    Tall[:, 0, 1] = -cp * ct * ss_ - sp * cs_
+    Tall[:, 0, 2] = cp * st
+    Tall[:, 1, 0] = sp * ct * cs_ + cp * ss_
+    Tall[:, 1, 1] = -sp * ct * ss_ + cp * cs_
+    Tall[:, 1, 2] = sp * st
+    Tall[:, 2, 0] = -st * cs_
+    Tall[:, 2, 1] = st * ss_
+    Tall[:, 2, 2] = ct
+
+    Pf = np.array([f["P"] for f in faces])          # (F,3,3,3)
+    r0 = np.array([f["r0"] for f in faces])          # (F,3)
+    uu = np.array([f["u"] for f in faces])
+    vv = np.array([f["v"] for f in faces])
+    area = np.array([f["area"] for f in faces])      # (F,)
 
     coefV = np.zeros((nang, 5))
     coefH = np.zeros((nang, 5))
-    wsum = 0.0
+    wsum = float(wori_all.sum())
 
-    # Precompute angle-dependent q
     cs = np.cos(Theta)
     sn = np.sin(Theta)
-    qz = 2.0 * petitk - grandk * cs
-    qy = -grandk * sn
+    qz_arr = 2.0 * petitk - grandk * cs               # (nang,)
+    qy_arr = -grandk * sn
 
-    def add_pol(X, weight, coef):          # X: (nang, 3)  xx, yy, xy
-        coef[:, 0] += weight * np.abs(X[:, 0]) ** 2
-        coef[:, 1] += weight * (4.0 * np.abs(X[:, 2]) ** 2
-                                + 2.0 * np.real(X[:, 0] * np.conj(X[:, 1])))
-        coef[:, 2] += weight * np.abs(X[:, 1]) ** 2
-        coef[:, 3] += weight * 4.0 * np.real(X[:, 0] * np.conj(X[:, 2]))
-        coef[:, 4] += weight * 4.0 * np.real(X[:, 1] * np.conj(X[:, 2]))
+    def add_pol(X, weight, coef):        # X (nang, B, 3) ; weight (B,)
+        coef[:, 0] += np.einsum("b,ab->a", weight, np.abs(X[:, :, 0]) ** 2)
+        coef[:, 1] += np.einsum("b,ab->a", weight,
+                                4.0 * np.abs(X[:, :, 2]) ** 2
+                                + 2.0 * np.real(X[:, :, 0] * np.conj(X[:, :, 1])))
+        coef[:, 2] += np.einsum("b,ab->a", weight, np.abs(X[:, :, 1]) ** 2)
+        coef[:, 3] += np.einsum("b,ab->a", weight, 4.0 * np.real(X[:, :, 0] * np.conj(X[:, :, 2])))
+        coef[:, 4] += np.einsum("b,ab->a", weight, 4.0 * np.real(X[:, :, 1] * np.conj(X[:, :, 2])))
 
-    for ip in range(n_phi):
-        say("calculation in progress : %5.1f pourcent " % (100.0 * ip / n_phi))
-        phi = (ip + 0.5) * dphi
-        for it in range(n_theta):
-            th = th_nodes[it]
-            wori = dphi * th_w[it]
-            wsum += wori
+    nf = len(faces)
+    batch = max(1, min(norient, max_elems // max(1, nang * nf)))
+    done = 0
+    for b0 in range(0, norient, batch):
+        b1 = min(b0 + batch, norient)
+        say("calculation in progress : %5.1f pourcent " % (100.0 * b0 / norient))
+        T = Tall[b0:b1]
+        w = wori_all[b0:b1]
+        X, Y = T[:, 0, :], T[:, 1, :]
+        # lab-frame tensors, (xx, yy, xy), per face: L[b,f,i,q]
+        Mxx = np.einsum("fabc,pb,pc->pfa", Pf, X, X)
+        Myy = np.einsum("fabc,pb,pc->pfa", Pf, Y, Y)
+        Mxy = 0.5 * (np.einsum("fabc,pb,pc->pfa", Pf, X, Y)
+                     + np.einsum("fabc,pb,pc->pfa", Pf, Y, X))
+        L = np.stack([np.einsum("pia,pfa->pfi", T, M) for M in (Mxx, Myy, Mxy)], axis=-1)
+        # lab-frame y,z of centre and edge vectors: (B, F)
+        yc = np.einsum("pa,fa->pf", T[:, 1, :], r0)
+        zc = np.einsum("pa,fa->pf", T[:, 2, :], r0)
+        yu = np.einsum("pa,fa->pf", T[:, 1, :], uu)
+        zu = np.einsum("pa,fa->pf", T[:, 2, :], uu)
+        yv = np.einsum("pa,fa->pf", T[:, 1, :], vv)
+        zv = np.einsum("pa,fa->pf", T[:, 2, :], vv)
 
-            T = euler_zyz(phi, th, 0.0)
+        qz = qz_arr[:, None, None]
+        qy = qy_arr[:, None, None]
+        Xu = qy * yu[None] + qz * zu[None]
+        Xv = qy * yv[None] + qz * zv[None]
+        Ff = (area[None, None, :] * np.exp(1j * (qz * zc[None] + qy * yc[None]))
+              * csinc_array(0.5 * Xu) * csinc_array(0.5 * Xv))          # (nang, B, F)
+        A = np.einsum("apf,pfiq->apiq", Ff, L)                          # (nang, B, 3, 3)
 
-            # Lab-frame tensors (xx, yy, xy components) and positions, all points at once.
-            # M[p,a] = sum_bc P[p,a,b,c] T[x,b] T[y,c]  ->  full[p,i] = sum_a T[i,a] M[p,a]
-            X, Y = T[0], T[1]
-            Mxx = np.einsum("pabc,b,c->pa", P, X, X)
-            Myy = np.einsum("pabc,b,c->pa", P, Y, Y)
-            Mxy = 0.5 * (np.einsum("pabc,b,c->pa", P, X, Y)
-                         + np.einsum("pabc,b,c->pa", P, Y, X))
-            L = np.empty((len(w), 3, 3))      # [p, i, q]  q=xx,yy,xy
-            L[:, :, 0] = w[:, None] * (Mxx @ T.T)
-            L[:, :, 1] = w[:, None] * (Myy @ T.T)
-            L[:, :, 2] = w[:, None] * (Mxy @ T.T)
-            yl = r @ T[1]
-            zl = r @ T[2]
+        add_pol(A[:, :, 0, :], w, coefV)
+        Hs = cs[:, None, None] * A[:, :, 1, :] - sn[:, None, None] * A[:, :, 2, :]
+        add_pol(Hs, w, coefH)
 
-            ph = np.exp(1j * (qz[:, None] * zl[None, :] + qy[:, None] * yl[None, :]))
-            A = np.einsum("ap,piq->aiq", ph, L)                 # (nang, 3, 3)
-
-            add_pol(A[:, 0, :], wori, coefV)                    # V: lab x
-            Hs = cs[:, None] * A[:, 1, :] - sn[:, None] * A[:, 2, :]
-            add_pol(Hs, wori, coefH)
-
-    # Orientation average + radiative prefactor
     coefV *= scale / wsum
     coefH *= scale / wsum
     return coefV, coefH
@@ -269,7 +316,7 @@ def compute_coefficients(Theta, petitk, grandk, scale, r, w, P, n_phi=None, n_th
 # --------------------------------------------------------------------------
 # Outputs
 # --------------------------------------------------------------------------
-def write_header(fout, use_nlwkb, lam, n_p, n_m, a, length, petitk, grandk,
+def write_header(fout, use_nlwkb, lam, n_p, n_m, a, b, c, petitk, grandk,
                  rad_pref, rad_pref2, ki):
     fout.write("********************************************************\n")
     fout.write("****           Py_SHS: An open source software      ****\n")
@@ -284,7 +331,7 @@ def write_header(fout, use_nlwkb, lam, n_p, n_m, a, length, petitk, grandk,
     fout.write("                                                        \n")
     fout.write("********************************************************\n")
     fout.write("********************************************************\n")
-    fout.write("**       SIMULATION RESULTS  for ellipsoid programm ****\n")
+    fout.write("**       SIMULATION RESULTS  for box (cube) programm ****\n")
     fout.write("********************************************************\n")
     fout.write("  Mode                : %s\n" % ("NLWKB" if use_nlwkb else "Classic RGD"))
     fout.write("  wavelength = %f nm\n" % lam)
@@ -293,13 +340,14 @@ def write_header(fout, use_nlwkb, lam, n_p, n_m, a, length, petitk, grandk,
                    % (n_p.real, n_p.imag, n_m.real, n_m.imag))
     else:
         fout.write("  n = %.5f + i*%.5f\n" % (n_p.real, n_p.imag))
-    fout.write("  equatorial radius a = %f nm   length 2c = %f nm\n" % (a, length))
+    fout.write("  box edges  a = %f nm   b = %f nm   c = %f nm\n" % (a, b, c))
     fout.write("  petitk  (k_omega)   = %.6f + i*%.6f\n" % (petitk.real, petitk.imag))
     fout.write("  grandk  (k_2omega)  = %.6f + i*%.6f\n" % (grandk.real, grandk.imag))
     fout.write("  Radiative pref.     : |k|^2/(4pi) = %.6e  (I *= pref^2 = %.6e)\n"
                % (rad_pref, rad_pref2))
-    fout.write("  Quadrature          : surface %d x %d, orientations %d x %d\n"
-               % (GRID_USED[0], GRID_USED[1], GRID_USED[2], GRID_USED[3]))
+    fout.write("  Quadrature          : exact face integrals, orientations "
+               "%d (phi) x %d (cos theta, Gauss-Legendre) x %d (psi)\n"
+               % tuple(GRID_USED))
     fout.write("*********          SURFACE KI(2) TENSOR      ***********\n")
     fout.write("\n")
     labels = "xyz"
@@ -414,7 +462,7 @@ def main(argv):
     say("****                  ICGM - ENSCM                  ****")
     say("****                   june 2021                    ****")
     say("********************************************************")
-    say("      Ellipsoid SHS module with optional NLWKB          ")
+    say("      Box (cube) SHS module with optional NLWKB         ")
     say("           Don't forget to cite this work:              ")
     say("    J. Chem. Inf. Model. 2020, 60, 12, pp 5912–5917     ")
     say("                                                        ")
@@ -460,20 +508,20 @@ def main(argv):
             say("")
             say("n = %.5f + i*%.5f" % (n_p.real, n_p.imag))
 
-        say("Enter the equatorial radius of the ellipsoid in nm: ", end="")
+        say("Enter the edge a of the box along x in nm: ", end="")
         a = rd.real()
-        say("")
-        say("Enter the length of the ellipsoid along its symmetry axis in nm (=2c)? ",
+        say("Enter the edge b of the box along y in nm: ", end="")
+        b = rd.real()
+        say("Enter the edge c of the box along z (axis) in nm (a=b=c : cube): ",
             end="")
-        length = rd.real()
+        c = rd.real()
         say("      ******************************     ")
     except (EOFError, ValueError):
         return 1
 
-    if a <= 0 or length <= 0 or lam <= 0:
-        sys.stderr.write("wavelength, radius and length must be strictly positive.\n")
+    if a <= 0 or b <= 0 or c <= 0 or lam <= 0:
+        sys.stderr.write("wavelength and the three edges must be strictly positive.\n")
         return 1
-    c = length / 2.0
 
     petitk = 2.0 * PI * n_p / lam
     grandk = 4.0 * PI * n_m / lam
@@ -507,18 +555,18 @@ def main(argv):
         say("problem to open the output file to write results!")
         return 1
 
-    n_al, n_be, n_ph, n_th, grid_msg = shs_grid.ellipsoid_grid(
-        a, c, petitk, grandk, (N_ALPHA, N_BETA, N_PHI, N_THETA))
-    GRID_USED[:] = [n_al, n_be, n_ph, n_th]
-    say("Grid: surface %d x %d, orientations %d x %d" % (n_al, n_be, n_ph, n_th))
+    n_ph, n_th, n_ps, grid_msg = shs_grid.box_grid(
+        a, b, c, petitk, grandk, (N_PHI, N_THETA, N_PSI))
+    GRID_USED[:] = [n_ph, n_th, n_ps]
+    say("Orientation grid: %d x %d x %d" % (n_ph, n_th, n_ps))
     if grid_msg:
         say(grid_msg)
 
-    write_header(fout, use_nlwkb, lam, n_p, n_m, a, length, petitk, grandk,
+    write_header(fout, use_nlwkb, lam, n_p, n_m, a, b, c, petitk, grandk,
                  rad_pref, rad_pref2, ki)
     shs_units.write_header_lines(fout, unit)
 
-    r, w, P = build_surface(a, c, ki, n_al, n_be)
+    faces = build_faces(a, b, c, ki)
 
     # ---- modes ----
     if mode_single:
@@ -528,10 +576,10 @@ def main(argv):
         except (EOFError, ValueError):
             return 1
         Theta = np.array([gdeg * 2 * PI / 360])
-        say("********** Begin calculation for ellipsoid polar plot at %.1f ° ********"
+        say("********** Begin calculation for box polar plot at %.1f ° ********"
             % gdeg)
-        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, r, w, P, n_ph, n_th)
-        title = "Ellipsoid POLAR PLOT - CONFIGURATION AT %.1f deg" % gdeg
+        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, faces, *GRID_USED)
+        title = "Box POLAR PLOT - CONFIGURATION AT %.1f deg" % gdeg
         polar_output(fout, title, cV[0], cH[0])
 
     elif mode_integ:
@@ -556,14 +604,12 @@ def main(argv):
         else:
             Theta = np.array([th1])
 
-        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, r, w, P, n_ph, n_th)
+        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, faces, *GRID_USED)
         V = cV.mean(axis=0)
         H = cH.mean(axis=0)
-        polar_output(fout, "Ellipsoid POLAR PLOT - integrated over scattering angle",
-                     V, H)
+        polar_output(fout, "Box POLAR PLOT - integrated over scattering angle", V, H)
 
     else:
-        # angle_scattering: Theta grid from shs_angles.py (default 0 … 180 deg)
         try:
             say("Enter the number of points between 0 and Pi for the angular "
                 "SHS analysis: ", end="")
@@ -574,17 +620,17 @@ def main(argv):
             return 1
 
         nang = shs_angles.count(pas2)
-        say("********** Begin Ellipsoid SHS Angular Distribution calculation**************")
+        say("********** Begin Box SHS Angular Distribution calculation**************")
 
         fout.write("***************************************************************\n")
         fout.write("                                            \n")
-        fout.write("****          ellipsoid SHS angular distribution           ****\n")
+        fout.write("****             box SHS angular distribution              ****\n")
         fout.write("                                            \n")
         fout.write(" ****************OUTPUT****************************************\n")
         fout.write(" grandtheta  IPSS-IH(0°)   IPPP-IH(90°)   ISSS-IV(0°)   ISPP-IV(90°) \n")
 
         Theta = shs_angles.scattering_angles(pas2)
-        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, r, w, P, n_ph, n_th)
+        cV, cH = compute_coefficients(Theta, petitk, grandk, rad_pref2, faces, *GRID_USED)
 
         with open(shs_io.path("out_plot"), "w", encoding="utf-8") as fgr:
             fgr.write(" grandtheta   IH(0°)  IH(90°)  IV(0°)  IV(90°) \n")
